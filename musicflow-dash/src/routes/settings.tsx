@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
+import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +69,10 @@ function SettingsPage() {
             onChange={(v) => set("musicFolder", v)}
           />
         </Row>
-        <Row title="Rescan library" description="Re-read tags and playlists from disk.">
+        <Row
+          title="Rescan library"
+          description="Re-read tags and playlists from disk. Also checks for duplicate downloads and files that fail to play."
+        >
           <button
             onClick={() => void refresh()}
             className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-105"
@@ -76,6 +80,7 @@ function SettingsPage() {
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /> Rescan
           </button>
         </Row>
+        <LibraryIssuesPanel />
 
         <Row title="Theme" description="Dark is the default Musicflow look.">
           <div className="flex gap-2">

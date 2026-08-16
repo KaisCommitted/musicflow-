@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import {
+  ApiError,
   getJobStatus,
   startDownload,
   pauseJob,
@@ -13,6 +14,8 @@ import {
   type JobStatus,
 } from "@/lib/api";
 import type { Song } from "@/lib/api";
+
+const JOB_LOST_MESSAGE = "This job no longer exists on the server (likely a backend restart) — start a new one.";
 
 interface DownloadState {
   jobId: string | null;
@@ -30,6 +33,7 @@ interface DownloadState {
   _poll: () => void;
   _stopPolling: () => void;
   _resumeIfNeeded: () => void;
+  _handleJobError: (e: unknown) => void;
 
   playableSongs: () => Song[];
 }
@@ -59,24 +63,32 @@ export const useDownload = create<DownloadState>()(
 
       pause: () => {
         const { jobId } = get();
-        if (jobId) void pauseJob(jobId);
+        if (jobId) void pauseJob(jobId).catch((e) => get()._handleJobError(e));
       },
 
       resume: () => {
         const { jobId } = get();
-        if (jobId) void resumeJob(jobId);
+        if (jobId) void resumeJob(jobId).catch((e) => get()._handleJobError(e));
       },
 
       stop: () => {
         const { jobId } = get();
-        if (jobId) void stopJob(jobId);
+        if (jobId) void stopJob(jobId).catch((e) => get()._handleJobError(e));
       },
 
       retry: () => {
         const { jobId } = get();
         if (jobId) {
-          void retryJob(jobId);
-          get()._poll();
+          void retryJob(jobId)
+            .then(() => get()._poll())
+            .catch((e) => get()._handleJobError(e));
+        }
+      },
+
+      _handleJobError: (e: unknown) => {
+        if (e instanceof ApiError && e.status === 404) {
+          get()._stopPolling();
+          set({ jobId: null, status: null, items: [], error: JOB_LOST_MESSAGE });
         }
       },
 
@@ -107,8 +119,12 @@ export const useDownload = create<DownloadState>()(
               }, 2000);
               get()._stopPolling();
             }
-          } catch {
-            // Don't stop polling on transient errors
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 404) {
+              get()._handleJobError(e);
+              return;
+            }
+            // Don't stop polling on other transient errors (network blips, etc.)
           }
         };
         void tick();

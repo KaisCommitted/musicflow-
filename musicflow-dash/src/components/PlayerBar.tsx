@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { AlbumArt } from "@/components/AlbumArt";
-import { Waveform } from "@/components/Waveform";
 import { usePlayer } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -69,7 +68,7 @@ export function PlayerBar() {
 
   return (
     <footer
-      className="relative z-30 flex h-24 shrink-0 items-center gap-5 border-t border-border bg-card/95 px-5 backdrop-blur"
+      className="relative z-30 flex h-20 shrink-0 items-center gap-5 border-t border-border bg-card/95 px-5 backdrop-blur"
       style={{
         boxShadow: "0 -24px 60px -40px color-mix(in oklab, var(--dynamic) 90%, transparent)",
       }}
@@ -121,11 +120,12 @@ export function PlayerBar() {
           <span className="w-10 text-right text-[11px] tabular-nums text-muted-foreground">
             {formatTime(currentTime)}
           </span>
-          <Waveform
-            seed={song.id}
-            progress={progress}
-            onSeek={(r) => seek(r * total)}
-            className="h-9"
+          <Slider
+            value={[progress * 100]}
+            max={100}
+            step={0.1}
+            onValueChange={(v) => seek(((v[0] ?? 0) / 100) * total)}
+            aria-label="Seek"
           />
           <span className="w-10 text-[11px] tabular-nums text-muted-foreground">
             {formatTime(total)}

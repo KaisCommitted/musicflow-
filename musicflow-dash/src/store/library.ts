@@ -1,5 +1,14 @@
 import { create } from "zustand";
-import { getPlaylists, getSettings, saveSettings, scanFolder, type Playlist, type Song } from "@/lib/api";
+import {
+  getPlaylists,
+  getSettings,
+  resolveLibraryIssues,
+  saveSettings,
+  scanFolder,
+  type LibraryIssuesReport,
+  type Playlist,
+  type Song,
+} from "@/lib/api";
 
 export interface Settings {
   musicFolder: string;
@@ -19,11 +28,15 @@ interface LibraryState {
   settings: Settings;
   search: string;
   settingsLoaded: boolean;
+  /** Duplicate/corrupt files found by the most recent scan (initial load or rescan). */
+  issues: LibraryIssuesReport | null;
 
   setSearch: (q: string) => void;
+  setSongs: (songs: Song[]) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   loadSettings: () => Promise<void>;
   refresh: () => Promise<void>;
+  deleteIssueFiles: (paths: string[]) => Promise<void>;
   addPlaylist: (name: string) => void;
   removePlaylist: (name: string) => void;
   addSongToPlaylist: (name: string, songPath: string) => void;
@@ -73,8 +86,10 @@ export const useLibrary = create<LibraryState>()((set, get) => ({
   settings: defaultSettings,
   search: "",
   settingsLoaded: false,
+  issues: null,
 
   setSearch: (q) => set({ search: q }),
+  setSongs: (songs) => set({ songs }),
 
   loadSettings: async () => {
     try {
@@ -97,23 +112,31 @@ export const useLibrary = create<LibraryState>()((set, get) => ({
     const folder = get().settings.musicFolder;
     set({ loading: true, error: null });
     if (!folder) {
-      set({ songs: [], playlists: [], loading: false, error: "No music folder configured" });
+      set({ songs: [], playlists: [], issues: null, loading: false, error: "No music folder configured" });
       return;
     }
     try {
-      const [{ songs }, { playlists }] = await Promise.all([
+      const [{ songs, issues }, { playlists }] = await Promise.all([
         scanFolder(folder),
         getPlaylists(folder),
       ]);
-      set({ songs, playlists, loading: false, error: null });
+      set({ songs, playlists, issues, loading: false, error: null });
     } catch (e) {
       set({
         songs: [],
         playlists: [],
+        issues: null,
         loading: false,
         error: e instanceof Error ? e.message : String(e),
       });
     }
+  },
+
+  deleteIssueFiles: async (paths) => {
+    const folder = get().settings.musicFolder;
+    if (!folder || paths.length === 0) return;
+    const { songs, issues } = await resolveLibraryIssues(folder, paths);
+    set({ songs, issues });
   },
 
   addPlaylist: (name) =>

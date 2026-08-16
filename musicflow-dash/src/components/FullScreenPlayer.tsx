@@ -54,8 +54,16 @@ export function FullScreenPlayer() {
   }, [synced, setLyricsSynced]);
 
   useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-line="${active}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const container = listRef.current;
+    const el = container?.querySelector<HTMLElement>(`[data-line="${active}"]`);
+    if (!container || !el) return;
+    // Scroll the lyrics container directly by the exact pixel delta, rather than
+    // el.scrollIntoView() — that API can walk up and scroll *any* scrollable ancestor (or the
+    // page itself) to satisfy the request, which is what was lifting the whole full-screen view.
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const delta = elRect.top + elRect.height / 2 - (containerRect.top + containerRect.height / 2);
+    container.scrollBy({ top: delta, behavior: "smooth" });
   }, [active]);
 
   useEffect(() => {

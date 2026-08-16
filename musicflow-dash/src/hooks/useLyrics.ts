@@ -57,9 +57,14 @@ export function useLyrics(song: Song | null, duration: number) {
   const [sources, setSources] = useState<LyricsSourceOption[]>([]);
   const [activeMethod, setActiveMethod] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // How much each source has been nudged this sitting, per method — not read from the file (it
+  // only stores absolute corrected timestamps, no delta), so this is purely a this-session
+  // display. Cleared whenever the song changes, which is also what makes it disappear.
+  const [sessionShift, setSessionShift] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let cancelled = false;
+    setSessionShift({});
     if (!song) {
       setSources([]);
       setActiveMethod(null);
@@ -118,6 +123,10 @@ export function useLyrics(song: Song | null, duration: number) {
           : s,
       ),
     );
+    setSessionShift((prev) => ({
+      ...prev,
+      [method]: Math.round(((prev[method] ?? 0) + delta) * 10) / 10,
+    }));
     shiftChain.current = shiftChain.current
       .then(() => shiftLyricsOffset(path, method, delta))
       .then((r) => {
@@ -144,6 +153,8 @@ export function useLyrics(song: Song | null, duration: number) {
     loading,
     switchSource,
     shiftOffset,
+    /** How much the active source has been nudged this sitting; 0 once untouched or on a new song. */
+    sessionShift: (activeMethod && sessionShift[activeMethod]) || 0,
   };
 }
 

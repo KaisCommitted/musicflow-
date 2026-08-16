@@ -41,7 +41,7 @@ export function FullScreenPlayer() {
   } = usePlayer();
   const song = usePlayer((s) => s.current());
   const total = duration || song?.duration || 0;
-  const { sources, activeMethod, lines, synced, switchSource, shiftOffset } = useLyrics(
+  const { sources, activeMethod, lines, synced, switchSource, shiftOffset, sessionShift } = useLyrics(
     fullscreen ? song : null,
     total,
   );
@@ -87,7 +87,7 @@ export function FullScreenPlayer() {
               />
             )}
           </div>
-          <div className="absolute inset-0 bg-background/70" />
+          <div className="absolute inset-0 bg-background/90 backdrop-blur-2xl" />
 
           <div className="relative flex h-full flex-col">
             <div className="flex items-center justify-between px-6 py-5">
@@ -228,6 +228,12 @@ export function FullScreenPlayer() {
                     </div>
                     {synced && (
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {sessionShift !== 0 && (
+                          <span className="tabular-nums text-primary">
+                            {sessionShift > 0 ? "+" : ""}
+                            {sessionShift.toFixed(1)}s this session
+                          </span>
+                        )}
                         <button
                           onClick={() => shiftOffset(-5)}
                           aria-label="Shift lyrics timing 5 seconds earlier"

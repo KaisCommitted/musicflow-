@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type { Song } from "@/lib/api";
 import { localStreamUrl } from "@/lib/api";
 import { applyDynamicColor, colorFromString, dominantColorFromImage } from "@/lib/colors";
-import { getLyricsOffset, setLyricsOffset } from "@/lib/lyricsOffset";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -26,9 +25,6 @@ interface PlayerState {
   recentContexts: PlayContext[];
   queueOpen: boolean;
   fullscreen: boolean;
-  /** Seconds; how far the synced-lyrics highlight is nudged from the raw timestamps for the
-   * current song (like a subtitle delay). Loaded per-song from lyricsOffset.ts. */
-  lyricsOffset: number;
   /** Whether the lyrics source currently shown in the full-screen player is time-synced —
    * mirrored here (not just local to FullScreenPlayer) so the global keyboard shortcut handler
    * knows whether Up/Down should do anything. */
@@ -54,7 +50,6 @@ interface PlayerState {
   setQueueOpen: (open: boolean) => void;
   setFullscreen: (open: boolean) => void;
   setLyricsSynced: (synced: boolean) => void;
-  nudgeLyricsOffset: (delta: number) => void;
   _tick: (time: number, duration: number) => void;
 }
 
@@ -102,7 +97,7 @@ function load(song: Song, autoplay: boolean) {
   el.volume = usePlayer.getState().muted ? 0 : usePlayer.getState().volume;
   if (autoplay) void el.play().catch(() => undefined);
   void applyArtColor(song);
-  usePlayer.setState({ lyricsOffset: getLyricsOffset(song.path), lyricsSynced: false });
+  usePlayer.setState({ lyricsSynced: false });
 }
 
 function rememberContext(list: PlayContext[], ctx: PlayContext) {
@@ -123,7 +118,6 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   recentContexts: [],
   queueOpen: false,
   fullscreen: false,
-  lyricsOffset: 0,
   lyricsSynced: false,
 
   current: () => get().queue[get().index] ?? null,
@@ -258,14 +252,6 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   setFullscreen: (open) => set({ fullscreen: open }),
 
   setLyricsSynced: (synced) => set({ lyricsSynced: synced }),
-
-  nudgeLyricsOffset: (delta) => {
-    const song = get().current();
-    if (!song) return;
-    const next = Math.round((get().lyricsOffset + delta) * 10) / 10;
-    set({ lyricsOffset: next });
-    setLyricsOffset(song.path, next);
-  },
 
   _tick: (time, duration) => set({ currentTime: time, duration }),
 }));

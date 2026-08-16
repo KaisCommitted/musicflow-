@@ -37,18 +37,15 @@ export function FullScreenPlayer() {
     currentTime,
     duration,
     seek,
-    lyricsOffset,
-    nudgeLyricsOffset,
     setLyricsSynced,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
   const total = duration || song?.duration || 0;
-  const { sources, activeMethod, lines, synced, switchSource } = useLyrics(
+  const { sources, activeMethod, lines, synced, switchSource, shiftOffset } = useLyrics(
     fullscreen ? song : null,
     total,
   );
-  // Positive offset delays the lyrics (they light up later relative to the audio).
-  const active = activeLyricIndex(lines, currentTime - lyricsOffset);
+  const active = activeLyricIndex(lines, currentTime);
   const listRef = useRef<HTMLDivElement>(null);
   const realSources = sources.filter((s) => s.method !== "demo");
 
@@ -232,19 +229,17 @@ export function FullScreenPlayer() {
                     {synced && (
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                         <button
-                          onClick={() => nudgeLyricsOffset(-5)}
-                          aria-label="Advance lyrics 5 seconds"
+                          onClick={() => shiftOffset(-5)}
+                          aria-label="Shift lyrics timing 5 seconds earlier"
+                          title="Corrects the saved lyrics file — not a temporary display shift"
                           className="rounded-md border border-border px-2 py-0.5 transition-colors hover:border-primary hover:text-primary"
                         >
                           −5s
                         </button>
-                        <span className="w-12 text-center tabular-nums">
-                          {lyricsOffset > 0 ? "+" : ""}
-                          {lyricsOffset.toFixed(1)}s
-                        </span>
                         <button
-                          onClick={() => nudgeLyricsOffset(5)}
-                          aria-label="Delay lyrics 5 seconds"
+                          onClick={() => shiftOffset(5)}
+                          aria-label="Shift lyrics timing 5 seconds later"
+                          title="Corrects the saved lyrics file — not a temporary display shift"
                           className="rounded-md border border-border px-2 py-0.5 transition-colors hover:border-primary hover:text-primary"
                         >
                           +5s

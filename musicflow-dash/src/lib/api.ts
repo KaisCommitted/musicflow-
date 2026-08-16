@@ -243,6 +243,15 @@ export const setLyricsSource = (path: string, method: string) =>
     body: JSON.stringify({ path, method }),
   });
 
+/** Permanently corrects one source's saved timing by delta seconds — rewrites its
+ * {basename}.{method}.lrc backup directly (and the main ID3/lrc too, if that source is main).
+ * No client-side display offset involved. */
+export const shiftLyricsOffset = (path: string, method: string, delta: number) =>
+  req<{ ok: boolean; lyrics: string }>("/api/lyrics/shift-offset", {
+    method: "POST",
+    body: JSON.stringify({ path, method, delta }),
+  });
+
 /** TODO(backend): POST /api/playlist/create { folder, name } → writes an empty .m3u8. */
 export const createPlaylist = (folder: string, name: string) =>
   req<{ playlist: Playlist }>("/api/playlist/create", {

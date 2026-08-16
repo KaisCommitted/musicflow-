@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Song } from "@/lib/api";
-import { getLyricsSources, setLyricsSource } from "@/lib/api";
+import { getLyricsSources, setLyricsSource, shiftLyricsOffset } from "@/lib/api";
 
 export interface LyricLine {
   time: number;
@@ -42,6 +42,16 @@ function parse(raw: string, duration: number): LyricLine[] {
 }
 
 const DEMO_METHOD = "demo";
+
+// Bridges the currently-mounted FullScreenPlayer's shiftOffset to the global keyboard shortcut
+// handler (which has no other way to reach into it). Re-registered on every render (see the
+// effect below with no dep array) so it always calls the current song/source's closure.
+let activeShiftHandler: ((delta: number) => void) | null = null;
+
+/** Nudges whichever song's synced lyrics are currently shown in the full-screen player, if any. */
+export function shiftActiveLyrics(delta: number) {
+  activeShiftHandler?.(delta);
+}
 
 export function useLyrics(song: Song | null, duration: number) {
   const [sources, setSources] = useState<LyricsSourceOption[]>([]);
@@ -90,6 +100,42 @@ export function useLyrics(song: Song | null, duration: number) {
     void setLyricsSource(song.path, method).catch(() => undefined);
   };
 
+  // Chained (not parallel) so an accelerated run of nudges can't race and interleave
+  // read-modify-write cycles on the same backup file — each call waits for the previous one's
+  // round trip before firing the next.
+  const shiftChain = useRef<Promise<unknown>>(Promise.resolve());
+
+  const shiftOffset = (delta: number) => {
+    if (!song || !activeMethod || activeMethod === DEMO_METHOD) return;
+    const path = song.path;
+    const method = activeMethod;
+    // Instant visual feedback — shift the currently rendered lines immediately; the response
+    // below re-syncs from the server's actual (rounded/clamped) result once it lands.
+    setSources((prev) =>
+      prev.map((s) =>
+        s.method === method
+          ? { ...s, lines: s.lines.map((l) => ({ ...l, time: Math.max(0, l.time + delta) })) }
+          : s,
+      ),
+    );
+    shiftChain.current = shiftChain.current
+      .then(() => shiftLyricsOffset(path, method, delta))
+      .then((r) => {
+        setSources((prev) =>
+          prev.map((s) => (s.method === method ? { ...s, lines: parse(r.lyrics, duration) } : s)),
+        );
+      })
+      .catch(() => undefined);
+  };
+
+  useEffect(() => {
+    activeShiftHandler = active?.synced ? shiftOffset : null;
+    return () => {
+      activeShiftHandler = null;
+    };
+  }); // no dep array — always re-registers the current render's closure (song/activeMethod may
+  // have changed without `synced` itself changing, e.g. switching between two synced sources)
+
   return {
     sources,
     activeMethod,
@@ -97,6 +143,7 @@ export function useLyrics(song: Song | null, duration: number) {
     synced: active?.synced ?? false,
     loading,
     switchSource,
+    shiftOffset,
   };
 }
 

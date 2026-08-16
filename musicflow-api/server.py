@@ -1542,6 +1542,73 @@ def set_lyrics_source():
     return jsonify({"ok": True, "lyrics": text, "synced": text.lstrip().startswith("[")})
 
 
+_LRC_TIME_RE = re.compile(r"^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,2}))?\]", re.MULTILINE)
+
+
+def _shift_lrc_timestamps(text: str, delta: float) -> str:
+    """Rewrite every [mm:ss.xx] timestamp in an LRC file by delta seconds (clamped to >= 0).
+    Uses re.sub rather than splitting into lines and rejoining: it only touches the matched
+    timestamp brackets, so blank lines, trailing newlines, and metadata tags like [ar:...] (which
+    never match — they don't start with digits) come through completely untouched."""
+
+    def repl(m: re.Match) -> str:
+        minutes, seconds, frac = m.groups()
+        frac_val = (int(frac) / (10 if len(frac) == 1 else 100)) if frac else 0.0
+        total = round(max(0.0, int(minutes) * 60 + int(seconds) + frac_val + delta), 2)
+        new_minutes, new_seconds = divmod(total, 60)
+        return f"[{int(new_minutes):02d}:{new_seconds:05.2f}]"
+
+    return _LRC_TIME_RE.sub(repl, text)
+
+
+@app.route("/api/lyrics/shift-offset", methods=["POST"])
+def shift_lyrics_offset():
+    """Permanently corrects one source's saved timing by delta seconds — rewrites its
+    {basename}.{method}.lrc backup directly (no runtime/display-only offset). If that source is
+    currently the song's main lyrics, the ID3 tag / main .lrc are updated too so they don't go
+    stale relative to the corrected backup."""
+    data = request.get_json()
+    path = data.get("path", "").strip()
+    method = data.get("method", "").strip()
+    delta = data.get("delta")
+    if (
+        not path
+        or not os.path.isfile(path)
+        or method not in LYRICS_SOURCE_ORDER
+        or not isinstance(delta, (int, float))
+    ):
+        return jsonify({"error": "Invalid request"}), 400
+
+    base = os.path.splitext(os.path.basename(path))[0]
+    backup_path = os.path.join(os.path.dirname(path), f"{base}.{method}.lrc")
+    if not os.path.isfile(backup_path):
+        return jsonify({"error": "No lyrics found for that source"}), 404
+
+    try:
+        with open(backup_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return jsonify({"error": "Failed to read lyrics"}), 500
+
+    if not text.lstrip().startswith("["):
+        return jsonify({"error": "Source is not synced"}), 400
+
+    is_main = text == _read_main_lyrics(path)
+    shifted = _shift_lrc_timestamps(text, float(delta))
+
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            f.write(shifted)
+    except Exception as e:
+        log.warning("[lyrics] Failed to save shifted %s backup for %s: %s", method, path, e)
+        return jsonify({"error": "Failed to save"}), 500
+
+    if is_main:
+        _write_main_lyrics(path, shifted)
+
+    return jsonify({"ok": True, "lyrics": shifted})
+
+
 # ── Playlist CRUD endpoints ──
 
 @app.route("/api/playlist/create", methods=["POST"])

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { usePlayer } from "@/store/player";
 import { useLibrary } from "@/store/library";
 import { comboFromEvent, isCapturingKeybind, parseKeybinds, type KeybindActionId } from "@/lib/keybinds";
+import { shiftActiveLyrics } from "@/hooks/useLyrics";
 
 function isTypingTarget(el: EventTarget | null) {
   if (!(el instanceof HTMLElement)) return false;
@@ -60,13 +61,13 @@ export function useKeyboardShortcuts() {
         case "lyrics-offset-later":
           if (s.fullscreen && s.lyricsSynced) {
             e.preventDefault();
-            s.nudgeLyricsOffset(accelStep(e));
+            shiftActiveLyrics(accelStep(e));
           }
           break;
         case "lyrics-offset-earlier":
           if (s.fullscreen && s.lyricsSynced) {
             e.preventDefault();
-            s.nudgeLyricsOffset(-accelStep(e));
+            shiftActiveLyrics(-accelStep(e));
           }
           break;
       }

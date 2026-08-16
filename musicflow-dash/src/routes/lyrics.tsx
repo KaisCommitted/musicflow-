@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  AlertTriangle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Loader2,
   MicVocal,
   SkipForward,
+  Square,
+  XCircle,
 } from "lucide-react";
 import type { LyricsGenStatus } from "@/lib/api";
 import { useLibrary } from "@/store/library";
@@ -23,14 +24,14 @@ const STATUS_STYLES: Record<LyricsGenStatus, { label: string; className: string 
   processing: { label: "Fetching", className: "text-primary" },
   done: { label: "Found", className: "text-success" },
   not_found: { label: "Not found", className: "text-warning" },
-  error: { label: "Error", className: "text-destructive" },
+  cancelled: { label: "Stopped", className: "text-muted-foreground" },
 };
 
 function StatusIcon({ status }: { status: LyricsGenStatus }) {
   if (status === "done") return <CheckCircle2 className="h-4 w-4 text-success" />;
-  if (status === "error") return <AlertTriangle className="h-4 w-4 text-destructive" />;
   if (status === "not_found") return <SkipForward className="h-4 w-4 text-warning" />;
   if (status === "processing") return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+  if (status === "cancelled") return <XCircle className="h-4 w-4 text-muted-foreground" />;
   return <span className="h-2 w-2 rounded-full bg-muted-foreground" />;
 }
 
@@ -38,7 +39,8 @@ const PAGE_SIZE = 10;
 
 function LyricsPage() {
   const folder = useLibrary((s) => s.settings.musicFolder);
-  const { jobId, status, error, starting, start, reset, _resumeIfNeeded } = useLyricsGen();
+  const { jobId, status, error, starting, stopping, start, stop, reset, _resumeIfNeeded } =
+    useLyricsGen();
   const [page, setPage] = useState(0);
 
   // Resume polling if we navigate back to this page and the job is still running
@@ -51,7 +53,7 @@ function LyricsPage() {
     await start(folder);
   };
 
-  const pct = status && status.total ? Math.round((status.done / status.total) * 100) : 0;
+  const pct = status && status.total ? Math.round((status.processed / status.total) * 100) : 0;
   const totalPages = status ? Math.ceil(status.items.length / PAGE_SIZE) : 0;
   const pageItems = status ? status.items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) : [];
 
@@ -86,14 +88,19 @@ function LyricsPage() {
             <div className="flex-1">
               <div className="flex items-baseline gap-3">
                 <span className="text-3xl font-bold">{pct}%</span>
-                {status.finished && status.errors === 0 && (
+                {status.finished && status.cancelled && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                    Stopped
+                  </span>
+                )}
+                {status.finished && !status.cancelled && status.not_found === 0 && (
                   <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
                     Complete
                   </span>
                 )}
-                {status.finished && status.errors > 0 && (
-                  <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
-                    {status.errors} failed
+                {status.finished && !status.cancelled && status.not_found > 0 && (
+                  <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">
+                    {status.not_found} not found
                   </span>
                 )}
               </div>
@@ -108,7 +115,7 @@ function LyricsPage() {
               {[
                 ["Total", status.total],
                 ["Done", status.done],
-                ["Errors", status.errors],
+                ["Not found", status.not_found],
               ].map(([label, val]) => (
                 <div key={String(label)}>
                   <p className="text-lg font-bold tabular-nums">{val}</p>
@@ -119,6 +126,19 @@ function LyricsPage() {
               ))}
             </div>
           </div>
+
+          {!status.finished && (
+            <div className="mt-4">
+              <button
+                onClick={() => void stop()}
+                disabled={stopping || status.cancelled}
+                className="flex items-center gap-2 rounded-full border border-destructive/40 px-4 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+                {status.cancelled ? "Stopping…" : stopping ? "Stopping…" : "Stop"}
+              </button>
+            </div>
+          )}
 
           {status.finished && (
             <div className="mt-4">
@@ -164,6 +184,11 @@ function LyricsPage() {
                     <StatusIcon status={item.status} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{item.file}</p>
+                      {item.status === "done" && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.found_count} source{item.found_count === 1 ? "" : "s"} found
+                        </p>
+                      )}
                       {item.error && (
                         <p className="truncate text-xs text-muted-foreground">{item.error}</p>
                       )}

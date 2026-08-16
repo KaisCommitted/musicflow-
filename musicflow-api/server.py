@@ -13,7 +13,7 @@ from datetime import datetime
 from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
-from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 
 import yt_dlp
@@ -748,10 +748,18 @@ def generate_lyrics():
     lyrics_jobs[job_id] = {
         "folder": folder,
         "total": len(mp3s),
-        "done": 0,
-        "errors": 0,
         "finished": False,
-        "items": [{"file": f, "status": "pending", "error": None} for f in mp3s],
+        "cancelled": False,
+        "items": [
+            {
+                "file": f,
+                "status": "pending",
+                "error": None,
+                "main_method": None,
+                "sources": {m: {"status": "pending", "error": None, "text": None} for m in LYRICS_SOURCE_ORDER},
+            }
+            for f in mp3s
+        ],
     }
 
     thread = threading.Thread(target=_process_lyrics_job, args=(job_id,), daemon=True)
@@ -764,93 +772,263 @@ def lyrics_job_status(job_id: str):
     job = lyrics_jobs.get(job_id)
     if not job:
         return jsonify({"error": "Not found"}), 404
+    items = job["items"]
+    done = sum(1 for i in items if i["status"] == "done")
+    not_found = sum(1 for i in items if i["status"] == "not_found")
+    cancelled = sum(1 for i in items if i["status"] == "cancelled")
     return jsonify({
         "total": job["total"],
-        "done": job["done"],
-        "errors": job["errors"],
+        "processed": done + not_found + cancelled,
+        "done": done,
+        "not_found": not_found,
         "finished": job["finished"],
-        "items": job["items"],
+        "cancelled": job.get("cancelled", False),
+        "items": [
+            {
+                "file": i["file"],
+                # "error" is an internal retry-in-progress state — never surfaced to the client,
+                # it always resolves to done/not_found by the time the job finishes.
+                "status": "processing" if i["status"] == "error" else i["status"],
+                "error": i.get("error"),
+                "found_count": sum(1 for s in i["sources"].values() if s["status"] == "found"),
+            }
+            for i in items
+        ],
     })
+
+
+@app.route("/api/generate-lyrics/stop/<job_id>", methods=["POST"])
+def stop_lyrics_job(job_id: str):
+    job = lyrics_jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Not found"}), 404
+    job["cancelled"] = True
+    return jsonify({"ok": True})
+
+
+# Fetching lyrics is network-bound (a handful of HTTP calls per song to free lyric
+# APIs) with only trivial local CPU/disk work (ID3 read/write) — nothing like the
+# download job's video transcoding, so it tolerates far more concurrency locally.
+# The real ceiling is politeness toward the free, unauthenticated APIs behind it
+# (LRCLIB/NetEase/Megalobiz), not local resources — if failed/not_found counts climb
+# noticeably compared to a lower worker count, that's rate-limiting; dial this back.
+LYRICS_WORKERS = 50
+LYRICS_MAX_RETRY_CYCLES = 10
+
+
+def _derive_lyrics_status(sources: dict) -> str:
+    """Song-level status from per-source outcomes: error (still has a source worth retrying)
+    beats processing (a source hasn't been reached at all yet — only possible right after
+    seeding, since a full processing pass always resolves every pending/error source it sees)
+    beats done (at least one source found something) beats not_found (every source reached,
+    none found)."""
+    statuses = [s["status"] for s in sources.values()]
+    if "error" in statuses:
+        return "error"
+    if "pending" in statuses:
+        return "processing"
+    if "found" in statuses:
+        return "done"
+    return "not_found"
+
+
+def _seed_lyrics_sources(item: dict, folder: str, existing_files: set[str]) -> None:
+    """A source's backup file ({basename}.{method}.lrc) is written the moment that source is
+    found and never touched again, so its presence on disk — from this job's own earlier work
+    or a completely separate past run — is a trustworthy signal that source already succeeded.
+    Seed it in so it's never re-queried."""
+    base = os.path.splitext(item["file"])[0]
+    for method in LYRICS_SOURCE_ORDER:
+        name = f"{base}.{method}.lrc"
+        if name not in existing_files:
+            continue
+        try:
+            with open(os.path.join(folder, name), "r", encoding="utf-8") as f:
+                text = f.read()
+            if text.strip():
+                item["sources"][method] = {"status": "found", "error": None, "text": text}
+        except Exception:
+            pass  # leave it pending — it'll just be fetched normally
+
+
+def _sync_lyrics_files(item: dict, filepath: str) -> None:
+    """Make sure the ID3 tag / unsuffixed .lrc reflect the highest-priority source found so far.
+    Every found source already has its own {basename}.{method}.lrc backup file (written the
+    moment it's found, see process_item), so nothing needs to happen to the previous main when
+    the pick shifts — it already has its own file from when it was found."""
+    sources = item["sources"]
+    best = next((m for m in LYRICS_SOURCE_ORDER if sources[m]["status"] == "found"), None)
+    if not best or item.get("main_method") == best:
+        return
+    text = sources[best]["text"]
+
+    try:
+        try:
+            tags = ID3(filepath)
+        except ID3NoHeaderError:
+            audio = MP3(filepath)
+            audio.add_tags()
+            audio.save()
+            tags = ID3(filepath)
+
+        tags.delall("USLT")
+        tags.add(USLT(encoding=3, lang="eng", desc="", text=text))
+        tags.save()
+
+        lrc_path = filepath.rsplit(".", 1)[0] + ".lrc"
+        if text.lstrip().startswith("["):
+            with open(lrc_path, "w", encoding="utf-8") as f:
+                f.write(text)
+        elif os.path.exists(lrc_path):
+            os.remove(lrc_path)
+    except Exception as e:
+        # The lyrics are still safe in their own {method}.lrc backup even if embedding into the
+        # ID3 tag / main .lrc fails — not worth failing the whole song over.
+        log.warning("[gen-lyrics] Failed to write ID3/main .lrc for %s (%s): %s", filepath, best, e)
+
+    item["main_method"] = best
+    log.info("[gen-lyrics] ✓ %s (main: %s)", item["file"], best)
+
+
+def _write_lyrics_backup(filepath: str, method: str, text: str) -> None:
+    backup_path = filepath.rsplit(".", 1)[0] + f".{method}.lrc"
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as e:
+        log.warning("[gen-lyrics] Failed to save %s backup for %s: %s", method, filepath, e)
 
 
 def _process_lyrics_job(job_id: str):
     job = lyrics_jobs[job_id]
     folder = job["folder"]
-    log.info("[gen-lyrics %s] Starting for %d files in %s", job_id, job["total"], folder)
+    log.info("[gen-lyrics %s] Starting for %d files in %s (%d workers)", job_id, job["total"], folder, LYRICS_WORKERS)
     _prevent_sleep()
 
-    for item in job["items"]:
+    # Stagger thread starts slightly so a burst of workers doesn't all hit the
+    # same free API in the same instant — still runs fully concurrently otherwise.
+    throttle_lock = threading.Lock()
+    last_start = {"t": 0.0}
+
+    def throttle():
+        with throttle_lock:
+            elapsed = time.time() - last_start["t"]
+            if elapsed < 0.15:
+                time.sleep(0.15 - elapsed)
+            last_start["t"] = time.time()
+
+    def process_item(item):
+        if job.get("cancelled"):
+            item["status"] = "cancelled"
+            return
+        throttle()
+        if job.get("cancelled"):
+            item["status"] = "cancelled"
+            return
+
         filepath = os.path.join(folder, item["file"])
         item["status"] = "processing"
+
+        # Extract artist/title from ID3 tags
+        artist, title = None, None
         try:
-            # Extract artist/title from ID3 tags
-            artist, title = None, None
-            try:
-                tags = ID3(filepath)
-                tpe1 = tags.get("TPE1")
-                tit2 = tags.get("TIT2")
-                if tpe1:
-                    artist = str(tpe1)
-                if tit2:
-                    title = str(tit2)
-            except Exception:
-                pass
+            tags = ID3(filepath)
+            tpe1 = tags.get("TPE1")
+            tit2 = tags.get("TIT2")
+            if tpe1:
+                artist = str(tpe1)
+            if tit2:
+                title = str(tit2)
+        except Exception:
+            pass
 
-            # Fallback: parse from filename
-            if not title:
-                name = os.path.splitext(item["file"])[0]
-                if " - " in name:
-                    parts = name.split(" - ", 1)
-                    artist = parts[0].strip()
-                    title = parts[1].strip()
-                else:
-                    title = name
-
-            query = f"{artist} {title}" if artist else title
-            lyrics = fetch_lyrics(artist, title, query, filepath)
-
-            if lyrics:
-                # Write lyrics into ID3 USLT tag
-                try:
-                    tags = ID3(filepath)
-                except ID3NoHeaderError:
-                    from mutagen.mp3 import MP3
-                    audio = MP3(filepath)
-                    audio.add_tags()
-                    audio.save()
-                    tags = ID3(filepath)
-
-                tags.delall("USLT")
-                tags.add(USLT(encoding=3, lang="eng", desc="", text=lyrics))
-                tags.save()
-
-                # Save .lrc sidecar for synced lyrics
-                if lyrics.lstrip().startswith("["):
-                    lrc_path = filepath.rsplit(".", 1)[0] + ".lrc"
-                    with open(lrc_path, "w", encoding="utf-8") as f:
-                        f.write(lyrics)
-
-                item["status"] = "done"
-                log.info("[gen-lyrics] ✓ %s", item["file"])
+        # Fallback: parse from filename
+        if not title:
+            name = os.path.splitext(item["file"])[0]
+            if " - " in name:
+                parts = name.split(" - ", 1)
+                artist = parts[0].strip()
+                title = parts[1].strip()
             else:
-                item["status"] = "not_found"
-                item["error"] = "No lyrics found"
-                job["errors"] += 1
-                log.info("[gen-lyrics] ✗ No lyrics: %s", item["file"])
+                title = name
 
+        query = f"{artist} {title}" if artist else title
+        sources = item["sources"]
+        pending_methods = [m for m in LYRICS_SOURCE_ORDER if sources[m]["status"] in ("pending", "error")]
+
+        try:
+            for method in pending_methods:
+                text, error = fetch_lyrics_from_source(method, artist, title, query)
+                if text:
+                    sources[method] = {"status": "found", "error": None, "text": text}
+                    _write_lyrics_backup(filepath, method, text)
+                    log.info("[gen-lyrics] ✓ %s via %s", item["file"], method)
+                elif error:
+                    sources[method] = {"status": "error", "error": error, "text": None}
+                    log.warning("[gen-lyrics] %s error for %s: %s", method, item["file"], error)
+                else:
+                    sources[method] = {"status": "not_found", "error": None, "text": None}
         except Exception as e:
-            item["status"] = "error"
-            item["error"] = str(e)
-            job["errors"] += 1
-            log.error("[gen-lyrics] Error on %s: %s", item["file"], e)
+            # Something unexpected (not a per-source fetch failure, which fetch_lyrics_from_source
+            # already turns into (None, error)) — mark whatever we didn't get to as errored so
+            # it's retried next cycle instead of silently staying "pending" forever.
+            log.error("[gen-lyrics] Unexpected error processing %s: %s", item["file"], e)
+            for method in pending_methods:
+                if sources[method]["status"] == "pending":
+                    sources[method] = {"status": "error", "error": str(e), "text": None}
 
-        job["done"] += 1
-        # Small delay to avoid rate-limiting
-        time.sleep(0.3)
+        _sync_lyrics_files(item, filepath)
+        item["status"] = _derive_lyrics_status(sources)
+        if item["status"] == "not_found":
+            item["error"] = "No lyrics found"
+            log.info("[gen-lyrics] ✗ No lyrics: %s", item["file"])
+
+    # Seed already-resolved sources from existing backup files before doing any network calls.
+    existing_files = set(os.listdir(folder))
+    for item in job["items"]:
+        _seed_lyrics_sources(item, folder, existing_files)
+        filepath = os.path.join(folder, item["file"])
+        _sync_lyrics_files(item, filepath)
+        derived = _derive_lyrics_status(item["sources"])
+        if derived != "processing":
+            item["status"] = derived
+
+    for cycle in range(LYRICS_MAX_RETRY_CYCLES):
+        if job.get("cancelled"):
+            break
+        to_process = [i for i in job["items"] if i["status"] in ("pending", "error")]
+        if not to_process:
+            break
+        if cycle > 0:
+            log.info("[gen-lyrics %s] Retry cycle %d — %d songs remaining", job_id, cycle, len(to_process))
+            time.sleep(5 + random.uniform(1, 5))
+        with ThreadPoolExecutor(max_workers=LYRICS_WORKERS) as pool:
+            futures = [pool.submit(process_item, item) for item in to_process if not job.get("cancelled")]
+            for f in futures:
+                f.result()
+
+    # Exhausted the retry budget (or ran out of work) — any song still stuck on an erroring
+    # source gives up on that source (treated as not-found) so "error" never becomes a final
+    # state; the dashboard only ever shows Done / Not found / Cancelled.
+    for item in job["items"]:
+        if item["status"] == "error":
+            for s in item["sources"].values():
+                if s["status"] == "error":
+                    s["status"] = "not_found"
+            item["status"] = _derive_lyrics_status(item["sources"])
+            if item["status"] == "not_found":
+                item["error"] = "No lyrics found"
+        if item["status"] == "pending":
+            item["status"] = "cancelled"
 
     job["finished"] = True
     found = sum(1 for i in job["items"] if i["status"] == "done")
-    log.info("[gen-lyrics %s] Finished — %d found, %d not found/errors", job_id, found, job["errors"])
+    not_found = sum(1 for i in job["items"] if i["status"] == "not_found")
+    cancelled = sum(1 for i in job["items"] if i["status"] == "cancelled")
+    log.info(
+        "[gen-lyrics %s] %s — %d found, %d not found, %d skipped (cancelled)",
+        job_id, "Cancelled" if job.get("cancelled") else "Finished", found, not_found, cancelled,
+    )
     _allow_sleep()
 
 
@@ -929,8 +1107,15 @@ def scan_folder():
     if not folder or not os.path.isdir(folder):
         return jsonify({"error": "Invalid folder path"}), 400
 
+    start = time.time()
     songs = _scan_songs(folder)
-    return jsonify({"songs": songs})
+    issues = find_library_issues_from_songs(songs, folder)
+    log.info(
+        "[scan] %s — %d songs, %d duplicate groups, %d corrupt-only files (%.2fs)",
+        folder, len(songs), len(issues["duplicate_groups"]), len(issues["standalone_corrupt"]),
+        time.time() - start,
+    )
+    return jsonify({"songs": songs, "issues": issues})
 
 
 def _scan_songs(folder: str) -> list[dict]:
@@ -959,7 +1144,7 @@ def _scan_songs(folder: str) -> list[dict]:
             song = {
                 "id": filepath, "path": filepath,
                 "title": c["title"], "artist": c["artist"], "album": c["album"],
-                "duration": c["duration"],
+                "duration": c["duration"], "size": file_size, "has_lyrics": bool(c["has_lyrics"]),
             }
             if c.get("track"):
                 song["track"] = c["track"]
@@ -971,7 +1156,7 @@ def _scan_songs(folder: str) -> list[dict]:
             continue
 
         # Read ID3 tags for new/modified files
-        song = {"id": filepath, "path": filepath, "title": "", "artist": "", "album": "", "duration": 0}
+        song = {"id": filepath, "path": filepath, "title": "", "artist": "", "album": "", "duration": 0, "size": file_size}
         has_artwork = False
         has_lyrics = False
         track = None
@@ -1013,6 +1198,8 @@ def _scan_songs(folder: str) -> list[dict]:
             else:
                 song["title"] = name
 
+        song["has_lyrics"] = has_lyrics
+
         # Cache in db
         db.upsert_song(filepath, song["title"], song["artist"], song.get("album", ""),
                        song["duration"], track, year, has_artwork, has_lyrics,
@@ -1022,6 +1209,148 @@ def _scan_songs(folder: str) -> list[dict]:
     # Remove stale entries for deleted files
     db.remove_stale_songs(folder, current_paths)
     return songs
+
+
+def _normalize_key(text: str) -> str:
+    """Lowercase, punctuation-insensitive key used to match the same song across
+    filenames/tags that differ only in formatting (the classic "different app version" dupe)."""
+    text = (text or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _build_related_index(folder: str, mp3_paths: list[str]) -> dict[str, list[str]]:
+    """Map each mp3 path to its .lrc sidecar files (main + {method}.lrc backups), built
+    from a single directory listing instead of a glob() per file — the previous version
+    re-listed the whole folder for every candidate file, which is what made duplicate
+    detection slow to the point of feeling hung on a 1000+ song library."""
+    bases = {os.path.splitext(os.path.basename(p))[0]: p for p in mp3_paths}
+    # Longest-first so a dot-containing title (e.g. "T.N.T.") wins over a shorter prefix
+    sorted_bases = sorted(bases.keys(), key=len, reverse=True)
+    index: dict[str, list[str]] = {p: [] for p in mp3_paths}
+
+    for f in os.listdir(folder):
+        if not f.lower().endswith(".lrc"):
+            continue
+        stem = f[:-4]  # strip ".lrc"
+        base = stem if stem in bases else next((b for b in sorted_bases if stem.startswith(b + ".")), None)
+        if base:
+            index[bases[base]].append(os.path.join(folder, f))
+
+    return index
+
+
+def find_library_issues_from_songs(songs: list[dict], folder: str) -> dict:
+    """Group already-scanned songs by normalized Artist+Title and flag corrupt files.
+    Runs entirely on data _scan_songs already produced (cached where possible) — no
+    second mutagen pass over the library, so this stays fast at any library size.
+    For each duplicate group, the file to keep is picked by: does its filename match
+    the app's own naming convention ("Artist - Title.mp3")? Re-downloads from an older
+    app version are usually near-identical in size (same yt-dlp quality settings), so
+    size is a weak signal here — correct naming is the stronger tell of "the good copy",
+    with size/completeness only as tiebreakers. Every other file in the group (including
+    corrupt ones) is a removal candidate. A group where every copy is corrupt has no
+    keeper — the whole song would be lost."""
+    related_index = _build_related_index(folder, [s["path"] for s in songs])
+
+    def is_corrupt(s: dict) -> bool:
+        return (s.get("duration") or 0) <= 0
+
+    def corrupt_reason(s: dict) -> str:
+        return "File is empty (0 bytes)" if not s.get("size") else "No readable audio track (corrupt file)"
+
+    def matches_naming_convention(s: dict) -> bool:
+        if not s.get("artist") or not s.get("title"):
+            return False
+        expected = sanitize_filename(f"{s['artist']} - {s['title']}") + ".mp3"
+        return os.path.basename(s["path"]).lower() == expected.lower()
+
+    groups: dict[str, list[dict]] = {}
+    for s in songs:
+        key = f"{_normalize_key(s.get('artist', ''))}|{_normalize_key(s.get('title', ''))}"
+        groups.setdefault(key, []).append(s)
+
+    duplicate_groups = []
+    standalone_corrupt = []
+
+    for items in groups.values():
+        if len(items) == 1:
+            s = items[0]
+            if is_corrupt(s):
+                standalone_corrupt.append({
+                    "path": s["path"], "size": s.get("size", 0), "reason": corrupt_reason(s),
+                    "related": related_index.get(s["path"], []),
+                })
+            continue
+
+        healthy = [s for s in items if not is_corrupt(s)]
+        keeper = max(
+            healthy,
+            key=lambda s: (
+                matches_naming_convention(s),
+                s.get("size", 0),
+                int(bool(s.get("artwork"))) + int(bool(s.get("has_lyrics"))),
+            ),
+        ) if healthy else None
+
+        files = [{
+            "path": s["path"], "size": s.get("size", 0),
+            "corrupt": is_corrupt(s), "corrupt_reason": corrupt_reason(s) if is_corrupt(s) else None,
+            "has_artwork": bool(s.get("artwork")), "has_lyrics": bool(s.get("has_lyrics")),
+            "keep": keeper is not None and s["path"] == keeper["path"],
+            "related": related_index.get(s["path"], []),
+        } for s in items]
+        files.sort(key=lambda f: (not f["keep"], -f["size"]))
+
+        duplicate_groups.append({
+            "artist": items[0].get("artist") or "Unknown",
+            "title": items[0].get("title") or "",
+            "keep": keeper["path"] if keeper else None,
+            "all_corrupt": keeper is None,
+            "files": files,
+        })
+
+    duplicate_groups.sort(key=lambda g: (g["artist"].lower(), g["title"].lower()))
+    return {"duplicate_groups": duplicate_groups, "standalone_corrupt": standalone_corrupt}
+
+
+@app.route("/api/library/resolve-issues", methods=["POST"])
+def library_resolve_issues():
+    """Delete a confirmed set of files (mp3s and/or their .lrc sidecars). The frontend
+    doesn't ask the user to pick individual files — it sends every non-keeper path from
+    the last scan's `issues` report as one bulk action. Only ever deletes files that
+    resolve inside the given folder, as a backend-side safety net regardless of what
+    the frontend sends."""
+    data = request.get_json()
+    folder = data.get("folder", "").strip()
+    delete_paths = data.get("delete", [])
+    if not folder or not os.path.isdir(folder):
+        return jsonify({"error": "Invalid folder path"}), 400
+
+    folder_real = os.path.realpath(folder)
+    deleted = []
+    for path in delete_paths:
+        if not isinstance(path, str):
+            continue
+        real = os.path.realpath(path)
+        try:
+            if os.path.commonpath([folder_real, real]) != folder_real:
+                continue
+        except ValueError:
+            continue  # different drive on Windows
+        if not real.lower().endswith((".mp3", ".lrc")):
+            continue
+        try:
+            if os.path.isfile(real):
+                os.remove(real)
+                deleted.append(path)
+        except OSError as e:
+            log.warning("[library] Failed to delete %s: %s", real, e)
+
+    log.info("[library] Deleted %d/%d requested files in %s", len(deleted), len(delete_paths), folder)
+    songs = _scan_songs(folder)
+    issues = find_library_issues_from_songs(songs, folder)
+    return jsonify({"deleted": deleted, "songs": songs, "issues": issues})
 
 
 @app.route("/api/browse", methods=["POST"])
@@ -1251,4 +1580,7 @@ if __name__ == "__main__":
     folder = music_folder()
     print(f"\n  Music folder: {folder or '(not configured yet)'}\n")
     print(f"  Database: {db.DB_PATH}\n")
-    app.run(debug=False, port=5000)
+    # threaded=True matters: without it the dev server handles one request at a time,
+    # so a long-lived request (e.g. audio streaming while a song plays) blocks every
+    # other endpoint — including a scan — until it finishes.
+    app.run(debug=False, port=5000, threaded=True)

@@ -5,12 +5,23 @@
 
 const BASE = "";
 
+/** Thrown by req() on a non-2xx response. Carries the HTTP status so callers can
+ * tell "this job no longer exists" (404 — e.g. the backend restarted and lost its
+ * in-memory job state) apart from other failures. */
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, statusText: string, path: string) {
+    super(`${status} ${statusText} — ${path}`);
+    this.status = status;
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${path}`);
+  if (!res.ok) throw new ApiError(res.status, res.statusText, path);
   return (await res.json()) as T;
 }
 
@@ -138,7 +149,7 @@ export const retryHistoryItem = (history_id: string, query: string) =>
 /* ---------------------------- playlists & scanning ------------------------- */
 
 export const scanFolder = (folder: string) =>
-  req<{ songs: Song[] }>("/api/scan", {
+  req<{ songs: Song[]; issues: LibraryIssuesReport }>("/api/scan", {
     method: "POST",
     body: JSON.stringify({ folder }),
   });
@@ -153,19 +164,22 @@ export const browseFolder = () => req<{ folder: string }>("/api/browse", { metho
 
 /* ---------------------------- lyrics generation ---------------------------- */
 
-export type LyricsGenStatus = "pending" | "processing" | "done" | "not_found" | "error";
+export type LyricsGenStatus = "pending" | "processing" | "done" | "not_found" | "cancelled";
 
 export interface LyricsGenItem {
   file: string;
   status: LyricsGenStatus;
   error?: string | null;
+  found_count: number;
 }
 
 export interface LyricsGenJobStatus {
   total: number;
+  processed: number;
   done: number;
-  errors: number;
+  not_found: number;
   finished: boolean;
+  cancelled: boolean;
   items: LyricsGenItem[];
 }
 
@@ -177,6 +191,9 @@ export const generateLyrics = (folder: string) =>
 
 export const generateLyricsStatus = (jobId: string) =>
   req<LyricsGenJobStatus>(`/api/generate-lyrics/status/${jobId}`);
+
+export const stopLyricsJob = (jobId: string) =>
+  req<{ ok: boolean }>(`/api/generate-lyrics/stop/${jobId}`, { method: "POST" });
 
 /* --------------------------------- settings -------------------------------- */
 
@@ -225,3 +242,45 @@ export const deletePlaylist = (folder: string, name: string) =>
     method: "POST",
     body: JSON.stringify({ folder, name }),
   });
+
+/* ---------------------------- library cleanup ---------------------------- */
+
+export interface LibraryIssueFile {
+  path: string;
+  size: number;
+  corrupt: boolean;
+  corrupt_reason: string | null;
+  has_artwork: boolean;
+  has_lyrics: boolean;
+  /** true for the copy the backend recommends keeping */
+  keep: boolean;
+  /** sidecar .lrc files tied to this mp3 that would be deleted alongside it */
+  related: string[];
+}
+
+export interface DuplicateGroup {
+  artist: string;
+  title: string;
+  keep: string | null;
+  /** every copy in this group is corrupt — no keeper, the song would be lost entirely */
+  all_corrupt: boolean;
+  files: LibraryIssueFile[];
+}
+
+export interface StandaloneCorruptFile {
+  path: string;
+  size: number;
+  reason: string | null;
+  related: string[];
+}
+
+export interface LibraryIssuesReport {
+  duplicate_groups: DuplicateGroup[];
+  standalone_corrupt: StandaloneCorruptFile[];
+}
+
+export const resolveLibraryIssues = (folder: string, deletePaths: string[]) =>
+  req<{ deleted: string[]; songs: Song[]; issues: LibraryIssuesReport }>(
+    "/api/library/resolve-issues",
+    { method: "POST", body: JSON.stringify({ folder, delete: deletePaths }) },
+  );

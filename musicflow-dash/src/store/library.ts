@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   createPlaylist as apiCreatePlaylist,
   deletePlaylist as apiDeletePlaylist,
+  deleteSong as apiDeleteSong,
   updatePlaylist as apiUpdatePlaylist,
   getPlaylists,
   getSettings,
@@ -50,6 +51,8 @@ interface LibraryState {
   loadSettings: () => Promise<void>;
   refresh: () => Promise<void>;
   deleteIssueFiles: (paths: string[]) => Promise<void>;
+  /** Deletes a song's file, its lyrics sidecars, and removes it from every playlist. */
+  deleteSong: (path: string) => Promise<{ ok: boolean; error?: string }>;
   addPlaylist: (name: string) => void;
   removePlaylist: (name: string) => void;
   addSongToPlaylist: (name: string, songPath: string) => void;
@@ -160,6 +163,21 @@ export const useLibrary = create<LibraryState>()((set, get) => ({
     if (!folder || paths.length === 0) return;
     const { songs, issues } = await resolveLibraryIssues(folder, paths);
     set({ songs, issues });
+  },
+
+  deleteSong: async (path) => {
+    const folder = get().settings.musicFolder;
+    if (!folder) return { ok: false, error: "No music folder configured" };
+    try {
+      const { songs } = await apiDeleteSong(folder, path);
+      set((s) => ({
+        songs,
+        playlists: s.playlists.map((p) => ({ ...p, songs: p.songs.filter((sp) => sp !== path) })),
+      }));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   },
 
   addPlaylist: (name) => {

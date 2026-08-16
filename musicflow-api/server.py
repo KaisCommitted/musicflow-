@@ -1370,6 +1370,75 @@ def library_resolve_issues():
     return jsonify({"deleted": deleted, "songs": songs, "issues": issues})
 
 
+@app.route("/api/song/delete", methods=["POST"])
+def delete_song():
+    """Deletes one song: the mp3 itself, its main .lrc sidecar, and any
+    {method}.lrc backups (embedded ID3 metadata goes with the file). Also strips the
+    song from any .m3u8 playlists that reference it, so nothing dangling is left behind."""
+    data = request.get_json()
+    folder = data.get("folder", "").strip()
+    path = data.get("path", "").strip()
+    if not folder or not os.path.isdir(folder) or not path:
+        return jsonify({"error": "Invalid folder or path"}), 400
+
+    folder_real = os.path.realpath(folder)
+    real = os.path.realpath(path)
+    try:
+        if os.path.commonpath([folder_real, real]) != folder_real:
+            return jsonify({"error": "Path is outside the music folder"}), 400
+    except ValueError:
+        return jsonify({"error": "Path is outside the music folder"}), 400
+    if not real.lower().endswith(".mp3"):
+        return jsonify({"error": "Not an mp3 file"}), 400
+
+    base = os.path.splitext(os.path.basename(real))[0]
+    deleted = []
+
+    if os.path.isfile(real):
+        try:
+            os.remove(real)
+            deleted.append(real)
+        except OSError as e:
+            log.warning("[library] Failed to delete %s: %s", real, e)
+            return jsonify({"error": f"Couldn't delete file: {e}"}), 500
+
+    for f in os.listdir(folder):
+        if not f.lower().endswith(".lrc"):
+            continue
+        stem = f[:-4]
+        if stem == base or stem.startswith(base + "."):
+            lrc_path = os.path.join(folder, f)
+            try:
+                os.remove(lrc_path)
+                deleted.append(lrc_path)
+            except OSError as e:
+                log.warning("[library] Failed to delete %s: %s", lrc_path, e)
+
+    # Strip this song from any .m3u8 playlists that reference it.
+    updated_playlists = []
+    for f in os.listdir(folder):
+        if not f.lower().endswith(".m3u8"):
+            continue
+        pl_path = os.path.join(folder, f)
+        try:
+            with open(pl_path, "r", encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            continue
+        kept = [ln for ln in lines if ln.strip() not in (path, real)]
+        if len(kept) != len(lines):
+            with open(pl_path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(kept) + ("\n" if kept else ""))
+            updated_playlists.append(os.path.splitext(f)[0])
+
+    log.info(
+        "[library] Deleted song %s (%d file(s), removed from %d playlist(s))",
+        real, len(deleted), len(updated_playlists),
+    )
+    songs = _scan_songs(folder)
+    return jsonify({"ok": True, "deleted": deleted, "updated_playlists": updated_playlists, "songs": songs})
+
+
 @app.route("/api/browse", methods=["POST"])
 def browse_folder():
     if IN_DOCKER:

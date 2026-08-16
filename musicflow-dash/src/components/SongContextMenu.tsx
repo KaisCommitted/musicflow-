@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  Check,
   Disc3,
   ListEnd,
   ListPlus,
@@ -43,7 +44,8 @@ function Item({
 export function SongContextMenu() {
   const { song, contextSongs, contextLabel, playlistName, x, y, close } = useSongMenu();
   const { playQueue, playNext, addToQueue } = usePlayer();
-  const { playlists, addPlaylist, addSongToPlaylist, removeSongFromPlaylist } = useLibrary();
+  const { playlists, addPlaylist, addSongToPlaylist, removeSongFromPlaylist, deleteSong } =
+    useLibrary();
   const { openAlbum, openArtist } = useView();
   const navigate = useNavigate();
   const [submenu, setSubmenu] = useState(false);
@@ -108,22 +110,33 @@ export function SongContextMenu() {
       <div className="relative" onMouseEnter={() => setSubmenu(true)} onMouseLeave={() => setSubmenu(false)}>
         <Item
           icon={<Plus className="h-4 w-4" />}
-          label="Add to Playlist ▸"
+          label="Playlists ▸"
           onClick={() => setSubmenu((v) => !v)}
         />
         {submenu && (
-          <div className="absolute left-full top-0 ml-1 max-h-64 w-52 overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-elevated">
-            {playlists.map((p) => (
-              <Item
-                key={p.name}
-                icon={<ListPlus className="h-4 w-4" />}
-                label={p.name}
-                onClick={() => {
-                  addSongToPlaylist(p.name, song.path);
-                  close();
-                }}
-              />
-            ))}
+          <div className="absolute left-full top-0 ml-1 max-h-64 w-56 overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-elevated">
+            {playlists.map((p) => {
+              const inPlaylist = p.songs.includes(song.path);
+              return (
+                <Item
+                  key={p.name}
+                  icon={
+                    inPlaylist ? (
+                      <Check className="h-4 w-4 text-primary" />
+                    ) : (
+                      <ListPlus className="h-4 w-4" />
+                    )
+                  }
+                  label={p.name}
+                  onClick={() => {
+                    if (inPlaylist) removeSongFromPlaylist(p.name, song.path);
+                    else addSongToPlaylist(p.name, song.path);
+                    // Keep the submenu open — toggling more than one playlist in a row
+                    // shouldn't require reopening it each time.
+                  }}
+                />
+              );
+            })}
             <div className="my-1 h-px bg-border" />
             <Item
               icon={<Plus className="h-4 w-4" />}
@@ -163,6 +176,20 @@ export function SongContextMenu() {
         icon={<User className="h-4 w-4" />}
         label="Go to Artist"
         onClick={() => go(() => openArtist(song.artist))}
+      />
+
+      <div className="my-1 h-px bg-border" />
+      <Item
+        icon={<Trash2 className="h-4 w-4" />}
+        label="Delete Song…"
+        danger
+        onClick={() => {
+          const ok = window.confirm(
+            `Permanently delete "${song.title}"? This removes the file, its metadata, and its lyrics from disk — it can't be undone.`,
+          );
+          close();
+          if (ok) void deleteSong(song.path);
+        }}
       />
     </div>
   );

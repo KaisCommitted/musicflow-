@@ -314,3 +314,12 @@ export const resolveLibraryIssues = (folder: string, deletePaths: string[]) =>
     "/api/library/resolve-issues",
     { method: "POST", body: JSON.stringify({ folder, delete: deletePaths }) },
   );
+
+/** POST /api/song/delete { folder, path } → deletes the mp3 (and its embedded metadata
+ * with it), its .lrc sidecar + any lyrics-source backups, and strips it from every
+ * playlist that referenced it. */
+export const deleteSong = (folder: string, path: string) =>
+  req<{ ok: boolean; deleted: string[]; updated_playlists: string[]; songs: Song[] }>(
+    "/api/song/delete",
+    { method: "POST", body: JSON.stringify({ folder, path }) },
+  );

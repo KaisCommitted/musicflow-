@@ -108,6 +108,10 @@ export function SongTable({
               onDoubleClick={() => playQueue(sorted, i, context)}
               onContextMenu={(e) => {
                 e.preventDefault();
+                // Without this, the native event keeps bubbling to the window-level
+                // "contextmenu" listener SongContextMenu uses to close on outside-clicks,
+                // which would close the menu in the same tick it just opened in.
+                e.stopPropagation();
                 openMenu({
                   song,
                   contextSongs: sorted,

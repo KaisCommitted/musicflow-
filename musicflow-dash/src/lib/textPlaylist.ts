@@ -5,7 +5,7 @@
  * download-textarea playlist maker: a paste can define several playlists at once by
  * wrapping each block. Lines outside a block are ignored.
  */
-import type { Song } from "@/lib/api";
+import type { Playlist, Song } from "@/lib/api";
 
 export interface ParsedPlaylistBlock {
   name: string;
@@ -92,20 +92,34 @@ export function resolveTextPlaylists(
   });
 }
 
-/** Builds a ready-to-paste prompt for an LLM: the whole library plus an explanation of
- * the --playlistadd/--playlistend syntax, so the reply can be pasted straight back into
+/** Builds a ready-to-paste prompt for an LLM: the whole library, the playlists that
+ * already exist (so it doesn't recreate or ignore them), and an explanation of the
+ * --playlistadd/--playlistend syntax — so the reply can be pasted straight back into
  * the "Paste text" tab. */
-export function buildPlaylistPrompt(songs: Song[]): string {
-  const list = [...songs]
-    .sort((a, b) => `${a.artist} ${a.title}`.localeCompare(`${b.artist} ${b.title}`))
-    .map((s) => `${s.artist} - ${s.title}`)
-    .join("\n");
+export function buildPlaylistPrompt(songs: Song[], playlists: Playlist[]): string {
+  const sortedSongs = [...songs].sort((a, b) =>
+    `${a.artist} ${a.title}`.localeCompare(`${b.artist} ${b.title}`),
+  );
+  const label = (s: Song) => `${s.artist} - ${s.title}`;
+  const labelByPath = new Map(sortedSongs.map((s) => [s.path, label(s)]));
 
-  return `Here are all the songs in my music library:
+  const sections: string[] = [
+    `Here are all the songs in my music library:\n\n${sortedSongs.map(label).join("\n")}`,
+  ];
 
-${list}
+  if (playlists.length) {
+    const existing = playlists
+      .map((p) => {
+        const titles = p.songs.map((path) => labelByPath.get(path)).filter((t): t is string => !!t);
+        return `--playlistadd ${p.name}\n${titles.join("\n")}\n--playlistend`;
+      })
+      .join("\n\n");
+    sections.push(
+      `Here are the playlists I already have, for context — don't recreate these:\n\n${existing}`,
+    );
+  }
 
-I use a custom media player where playlists are created from plain text using this syntax:
+  sections.push(`I use a custom media player where playlists are created from plain text using this syntax:
 
 --playlistadd Playlist Name
 Song Title 1
@@ -116,7 +130,12 @@ Rules:
 - Wrap each playlist's songs between "--playlistadd <name>" and "--playlistend".
 - You can define multiple playlists at once — just repeat the block for each one.
 - The same song can appear in more than one playlist if it genuinely fits more than one.
-- Use the exact song entries from the list above, one per line, inside each block.
+- Use the exact song entries from the library list above, one per line, inside each block.
+- Playlist names must be unique, including against my existing playlists listed above — if you want to expand on one of those, give it a new name (e.g. "Road Trip 2") rather than reusing the original.`);
 
-Please divide my songs into a handful of well-thought-out playlists based on genre, vibe, mood, and when I'd realistically listen to them (e.g. workout, focus, late night, driving, rainy days, parties). Give each playlist a short, descriptive name, and reply with ONLY the playlists using the syntax above — no extra commentary before or after.`;
+  sections.push(
+    `Please divide my songs into a handful of well-thought-out playlists based on genre, vibe, mood, and when I'd realistically listen to them (e.g. workout, focus, late night, driving, rainy days, parties). Give each playlist a short, descriptive name, and reply with ONLY the playlists using the syntax above — no extra commentary before or after.`,
+  );
+
+  return sections.join("\n\n");
 }

@@ -44,6 +44,7 @@ export function CreatePlaylistDialog({
 
   const createPlaylistWithSongs = useLibrary((s) => s.createPlaylistWithSongs);
   const createPlaylistsFromBlocks = useLibrary((s) => s.createPlaylistsFromBlocks);
+  const existingPlaylists = useLibrary((s) => s.playlists);
 
   // Reset all local state whenever the dialog is (re)opened.
   useEffect(() => {
@@ -61,7 +62,7 @@ export function CreatePlaylistDialog({
 
   const handleCopyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(buildPlaylistPrompt(songs));
+      await navigator.clipboard.writeText(buildPlaylistPrompt(songs, existingPlaylists));
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {

@@ -105,12 +105,12 @@ def parse_artist_title(video_title: str) -> tuple[str | None, str]:
 
 
 def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> str | None:
-    """Fetch lyrics from all 5 sources (syncedlyrics: Lrclib, NetEase, Megalobiz; then direct
-    LRCLIB exact + fuzzy search) — every source is tried, none are skipped after a first hit.
-    The first hit in that priority order is returned as the main lyrics (same as before);
-    every other hit is saved next to mp3_path as a backup file named {basename}.{method}.lrc,
-    so the caller (or a future UI) can offer alternates to switch between."""
-    from syncedlyrics.providers import Lrclib, NetEase, Megalobiz
+    """Fetch lyrics from all 6 sources (syncedlyrics: Lrclib, NetEase, Megalobiz, Musixmatch;
+    then direct LRCLIB exact + fuzzy search) — every source is tried, none are skipped after a
+    first hit. The first hit in that priority order is returned as the main lyrics (same as
+    before); every other hit is saved next to mp3_path as a backup file named
+    {basename}.{method}.lrc, so the caller (or a future UI) can offer alternates to switch between."""
+    from syncedlyrics.providers import Lrclib, NetEase, Megalobiz, Musixmatch
     from syncedlyrics.utils import TargetType
 
     # Suppress noisy syncedlyrics/Musixmatch internal logging
@@ -121,8 +121,8 @@ def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> s
 
     results: list[tuple[str, str]] = []  # (method, lyrics_text), in priority order
 
-    # 1-3: syncedlyrics providers, queried individually so none are skipped once one hits
-    for method, provider in (("lrclib", Lrclib()), ("netease", NetEase()), ("megalobiz", Megalobiz())):
+    # 1-4: syncedlyrics providers, queried individually so none are skipped once one hits
+    for method, provider in (("lrclib", Lrclib()), ("netease", NetEase()), ("megalobiz", Megalobiz()), ("musixmatch", Musixmatch())):
         try:
             lrc = provider.get_lrc(search_term)
             text = lrc.to_str(TargetType.PREFER_SYNCED) if lrc else None
@@ -135,7 +135,7 @@ def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> s
         except Exception as e:
             log.warning("[lyrics] %s error for '%s': %s", method, search_term, e)
 
-    # 4: direct LRCLIB exact match
+    # 5: direct LRCLIB exact match
     if artist:
         try:
             url = f"https://lrclib.net/api/get?artist_name={urllib.parse.quote(artist)}&track_name={urllib.parse.quote(title)}"
@@ -152,7 +152,7 @@ def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> s
         except Exception as e:
             log.warning("[lyrics] lrclib-exact error for '%s': %s", search_term, e)
 
-    # 5: direct LRCLIB fuzzy search
+    # 6: direct LRCLIB fuzzy search
     try:
         url = f"https://lrclib.net/api/search?q={urllib.parse.quote(search_term)}"
         req = urllib.request.Request(url, headers={"User-Agent": "Musicflow/1.0"})

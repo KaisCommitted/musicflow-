@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import {
+  createPlaylist as apiCreatePlaylist,
+  deletePlaylist as apiDeletePlaylist,
+  updatePlaylist as apiUpdatePlaylist,
   getPlaylists,
   getSettings,
   resolveLibraryIssues,
@@ -9,6 +12,14 @@ import {
   type Playlist,
   type Song,
 } from "@/lib/api";
+
+/** Result of trying to create one playlist — used by both creation modes to report
+ * per-playlist success/failure (a text paste can define several at once). */
+export interface CreatePlaylistResult {
+  name: string;
+  ok: boolean;
+  error?: string;
+}
 
 export interface Settings {
   musicFolder: string;
@@ -44,6 +55,13 @@ interface LibraryState {
   addSongToPlaylist: (name: string, songPath: string) => void;
   removeSongFromPlaylist: (name: string, songPath: string) => void;
   playlistsForSong: (songPath: string) => string[];
+  /** Creates one playlist pre-filled with the given songs (the "pick songs" UI). */
+  createPlaylistWithSongs: (name: string, songPaths: string[]) => Promise<CreatePlaylistResult>;
+  /** Creates several playlists at once (the "paste text" UI) — one result per block,
+   * in order, so the caller can show which ones landed and which didn't. */
+  createPlaylistsFromBlocks: (
+    blocks: { name: string; songPaths: string[] }[],
+  ) => Promise<CreatePlaylistResult[]>;
 }
 
 const defaultSettings: Settings = {
@@ -144,34 +162,96 @@ export const useLibrary = create<LibraryState>()((set, get) => ({
     set({ songs, issues });
   },
 
-  addPlaylist: (name) =>
-    set((s) =>
-      s.playlists.some((p) => p.name === name)
-        ? {}
-        : { playlists: [...s.playlists, { name, songs: [] }] },
-    ),
+  addPlaylist: (name) => {
+    const folder = get().settings.musicFolder;
+    if (!folder || get().playlists.some((p) => p.name === name)) return;
+    set((s) => ({ playlists: [...s.playlists, { name, songs: [] }] }));
+    // Persist in the background; roll back the optimistic add if it fails.
+    void apiCreatePlaylist(folder, name).catch(() => {
+      set((s) => ({ playlists: s.playlists.filter((p) => p.name !== name) }));
+    });
+  },
 
-  removePlaylist: (name) =>
-    set((s) => ({ playlists: s.playlists.filter((p) => p.name !== name) })),
+  removePlaylist: (name) => {
+    const folder = get().settings.musicFolder;
+    const prev = get().playlists;
+    set((s) => ({ playlists: s.playlists.filter((p) => p.name !== name) }));
+    if (folder) void apiDeletePlaylist(folder, name).catch(() => set({ playlists: prev }));
+  },
 
-  addSongToPlaylist: (name, songPath) =>
-    set((s) => ({
-      playlists: s.playlists.map((p) =>
-        p.name === name && !p.songs.includes(songPath)
-          ? { ...p, songs: [...p.songs, songPath] }
-          : p,
-      ),
-    })),
+  addSongToPlaylist: (name, songPath) => {
+    const folder = get().settings.musicFolder;
+    const target = get().playlists.find((p) => p.name === name);
+    if (!folder || !target || target.songs.includes(songPath)) return;
+    const songs = [...target.songs, songPath];
+    set((s) => ({ playlists: s.playlists.map((p) => (p.name === name ? { ...p, songs } : p)) }));
+    void apiUpdatePlaylist(folder, name, songs).catch(() => {
+      set((s) => ({
+        playlists: s.playlists.map((p) => (p.name === name ? target : p)),
+      }));
+    });
+  },
 
-  removeSongFromPlaylist: (name, songPath) =>
-    set((s) => ({
-      playlists: s.playlists.map((p) =>
-        p.name === name ? { ...p, songs: p.songs.filter((x) => x !== songPath) } : p,
-      ),
-    })),
+  removeSongFromPlaylist: (name, songPath) => {
+    const folder = get().settings.musicFolder;
+    const target = get().playlists.find((p) => p.name === name);
+    if (!folder || !target) return;
+    const songs = target.songs.filter((x) => x !== songPath);
+    set((s) => ({ playlists: s.playlists.map((p) => (p.name === name ? { ...p, songs } : p)) }));
+    void apiUpdatePlaylist(folder, name, songs).catch(() => {
+      set((s) => ({
+        playlists: s.playlists.map((p) => (p.name === name ? target : p)),
+      }));
+    });
+  },
 
   playlistsForSong: (songPath) =>
     get()
       .playlists.filter((p) => p.songs.includes(songPath))
       .map((p) => p.name),
+
+  createPlaylistWithSongs: async (name, songPaths) => {
+    const folder = get().settings.musicFolder;
+    if (!folder) return { name, ok: false, error: "No music folder configured" };
+    if (get().playlists.some((p) => p.name === name)) {
+      return { name, ok: false, error: "A playlist with that name already exists" };
+    }
+    try {
+      await apiCreatePlaylist(folder, name);
+      if (songPaths.length) await apiUpdatePlaylist(folder, name, songPaths);
+      set((s) => ({ playlists: [...s.playlists, { name, songs: songPaths }] }));
+      return { name, ok: true };
+    } catch (e) {
+      return { name, ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  createPlaylistsFromBlocks: async (blocks) => {
+    const folder = get().settings.musicFolder;
+    if (!folder) {
+      return blocks.map((b) => ({ name: b.name, ok: false, error: "No music folder configured" }));
+    }
+    const existing = new Set(get().playlists.map((p) => p.name));
+    const created: Playlist[] = [];
+    const results: CreatePlaylistResult[] = [];
+
+    for (const b of blocks) {
+      if (existing.has(b.name)) {
+        results.push({ name: b.name, ok: false, error: "A playlist with that name already exists" });
+        continue;
+      }
+      try {
+        await apiCreatePlaylist(folder, b.name);
+        if (b.songPaths.length) await apiUpdatePlaylist(folder, b.name, b.songPaths);
+        created.push({ name: b.name, songs: b.songPaths });
+        existing.add(b.name);
+        results.push({ name: b.name, ok: true });
+      } catch (e) {
+        results.push({ name: b.name, ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (created.length) set((s) => ({ playlists: [...s.playlists, ...created] }));
+    return results;
+  },
 }));

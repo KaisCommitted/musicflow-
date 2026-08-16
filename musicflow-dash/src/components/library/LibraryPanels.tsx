@@ -4,6 +4,7 @@ import { ArrowLeft, Disc3, ListMusic, Play, Plus, Trash2, User } from "lucide-re
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
 import { SongTable } from "@/components/SongTable";
+import { CreatePlaylistDialog } from "@/components/library/CreatePlaylistDialog";
 import { useLibrary } from "@/store/library";
 import { usePlayer } from "@/store/player";
 import { useView } from "@/store/view";
@@ -183,9 +184,9 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
 export function PlaylistsView({ songs }: { songs: Song[] }) {
   const { playlist, openPlaylist, back, selectedPlaylists, toggleSelectedPlaylist, clearSelection } =
     useView();
-  const { playlists, addPlaylist, removePlaylist } = useLibrary();
+  const { playlists, removePlaylist } = useLibrary();
   const playQueue = usePlayer((s) => s.playQueue);
-  const [newName, setNewName] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   if (playlist) {
     const p = playlists.find((x) => x.name === playlist);
@@ -235,24 +236,14 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
 
   return (
     <div>
+      <CreatePlaylistDialog open={createOpen} onOpenChange={setCreateOpen} songs={songs} />
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="New playlist name"
-            className="h-10 w-56 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-          />
-          <button
-            onClick={() => {
-              if (newName.trim()) addPlaylist(newName.trim());
-              setNewName("");
-            }}
-            className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
-          >
-            <Plus className="h-4 w-4" /> Create
-          </button>
-        </div>
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
+        >
+          <Plus className="h-4 w-4" /> Create Playlist
+        </button>
         {selectedPlaylists.length > 0 && (
           <div className="ml-auto flex items-center gap-3">
             <span className="text-xs text-muted-foreground">

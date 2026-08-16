@@ -252,21 +252,21 @@ export const shiftLyricsOffset = (path: string, method: string, delta: number) =
     body: JSON.stringify({ path, method, delta }),
   });
 
-/** TODO(backend): POST /api/playlist/create { folder, name } → writes an empty .m3u8. */
+/** POST /api/playlist/create { folder, name } → writes an empty .m3u8 (no-op if it already exists). */
 export const createPlaylist = (folder: string, name: string) =>
   req<{ playlist: Playlist }>("/api/playlist/create", {
     method: "POST",
     body: JSON.stringify({ folder, name }),
   });
 
-/** TODO(backend): POST /api/playlist/update { folder, name, songs[] } → rewrites the .m3u8. */
+/** POST /api/playlist/update { folder, name, songs[] } → rewrites the .m3u8 with this exact song list. */
 export const updatePlaylist = (folder: string, name: string, songs: string[]) =>
   req<{ playlist: Playlist }>("/api/playlist/update", {
     method: "POST",
     body: JSON.stringify({ folder, name, songs }),
   });
 
-/** TODO(backend): POST /api/playlist/delete { folder, name }. */
+/** POST /api/playlist/delete { folder, name }. */
 export const deletePlaylist = (folder: string, name: string) =>
   req<{ ok: boolean }>("/api/playlist/delete", {
     method: "POST",

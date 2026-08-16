@@ -3,7 +3,7 @@
  *
  * Reuses the `--playlistadd Name` / `--playlistend` marker syntax from the old
  * download-textarea playlist maker: a paste can define several playlists at once by
- * wrapping each block, or (with no markers at all) just list songs for one playlist.
+ * wrapping each block. Lines outside a block are ignored.
  */
 import type { Song } from "@/lib/api";
 
@@ -23,11 +23,10 @@ export interface ResolvedPlaylistBlock {
   songPaths: string[];
 }
 
-/** Splits pasted text into named blocks. Lines outside any `--playlistadd`/`--playlistend`
- * pair fall back to a single block named `fallbackName`. */
-export function parseTextPlaylists(raw: string, fallbackName: string): ParsedPlaylistBlock[] {
+/** Splits pasted text into named blocks. Only lines inside a `--playlistadd Name` /
+ * `--playlistend` pair are kept — anything outside a block is ignored. */
+export function parseTextPlaylists(raw: string): ParsedPlaylistBlock[] {
   const blocks: ParsedPlaylistBlock[] = [];
-  const loose: string[] = [];
   let current: ParsedPlaylistBlock | null = null;
 
   for (const rawLine of raw.split("\n")) {
@@ -46,10 +45,9 @@ export function parseTextPlaylists(raw: string, fallbackName: string): ParsedPla
       continue;
     }
 
-    (current ? current.lines : loose).push(line);
+    current?.lines.push(line);
   }
 
-  if (loose.length) blocks.unshift({ name: fallbackName.trim() || "New Playlist", lines: loose });
   return blocks;
 }
 
@@ -92,4 +90,33 @@ export function resolveTextPlaylists(
     const songPaths = [...new Set(matches.map((m) => m.song?.path).filter((p): p is string => !!p))];
     return { name: b.name, matches, songPaths };
   });
+}
+
+/** Builds a ready-to-paste prompt for an LLM: the whole library plus an explanation of
+ * the --playlistadd/--playlistend syntax, so the reply can be pasted straight back into
+ * the "Paste text" tab. */
+export function buildPlaylistPrompt(songs: Song[]): string {
+  const list = [...songs]
+    .sort((a, b) => `${a.artist} ${a.title}`.localeCompare(`${b.artist} ${b.title}`))
+    .map((s) => `${s.artist} - ${s.title}`)
+    .join("\n");
+
+  return `Here are all the songs in my music library:
+
+${list}
+
+I use a custom media player where playlists are created from plain text using this syntax:
+
+--playlistadd Playlist Name
+Song Title 1
+Song Title 2
+--playlistend
+
+Rules:
+- Wrap each playlist's songs between "--playlistadd <name>" and "--playlistend".
+- You can define multiple playlists at once — just repeat the block for each one.
+- The same song can appear in more than one playlist if it genuinely fits more than one.
+- Use the exact song entries from the list above, one per line, inside each block.
+
+Please divide my songs into a handful of well-thought-out playlists based on genre, vibe, mood, and when I'd realistically listen to them (e.g. workout, focus, late night, driving, rainy days, parties). Give each playlist a short, descriptive name, and reply with ONLY the playlists using the syntax above — no extra commentary before or after.`;
 }

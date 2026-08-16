@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ListMusic, Loader2, Search, X } from "lucide-react";
+import { Check, Clipboard, ListMusic, Loader2, Search, X } from "lucide-react";
 import type { Song } from "@/lib/api";
 import {
   Dialog,
@@ -10,12 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLibrary, type CreatePlaylistResult } from "@/store/library";
-import { parseTextPlaylists, resolveTextPlaylists } from "@/lib/textPlaylist";
+import { buildPlaylistPrompt, parseTextPlaylists, resolveTextPlaylists } from "@/lib/textPlaylist";
 import { cn } from "@/lib/utils";
 
-const TEXT_PLACEHOLDER = `Bohemian Rhapsody
+const TEXT_PLACEHOLDER = `--playlistadd Road Trip
+Bohemian Rhapsody
 Don't Stop Believin'
-Weightless
+--playlistend
 
 --playlistadd Late Night Drive
 Nightcall
@@ -39,6 +40,7 @@ export function CreatePlaylistDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [textResults, setTextResults] = useState<CreatePlaylistResult[] | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const createPlaylistWithSongs = useLibrary((s) => s.createPlaylistWithSongs);
   const createPlaylistsFromBlocks = useLibrary((s) => s.createPlaylistsFromBlocks);
@@ -54,7 +56,18 @@ export function CreatePlaylistDialog({
     setSubmitting(false);
     setError(null);
     setTextResults(null);
+    setCopied(false);
   }, [open]);
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(buildPlaylistPrompt(songs));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard access can be blocked in some embedded webviews — nothing more to do.
+    }
+  };
 
   const filteredSongs = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -68,16 +81,15 @@ export function CreatePlaylistDialog({
 
   const resolvedBlocks = useMemo(() => {
     if (mode !== "text" || !text.trim()) return [];
-    const parsed = parseTextPlaylists(text, name);
+    const parsed = parseTextPlaylists(text);
     return resolveTextPlaylists(parsed, songs);
-  }, [mode, text, name, songs]);
+  }, [mode, text, songs]);
 
   const toggleSong = (path: string) =>
     setSelected((s) => (s.includes(path) ? s.filter((p) => p !== path) : [...s, path]));
 
   const canCreateBuild = name.trim().length > 0 && !submitting;
-  const canCreateText =
-    resolvedBlocks.some((b) => b.songPaths.length > 0 || b.name.trim()) && !submitting;
+  const canCreateText = resolvedBlocks.length > 0 && !submitting;
 
   const handleCreateBuild = async () => {
     const trimmed = name.trim();
@@ -98,9 +110,7 @@ export function CreatePlaylistDialog({
     setSubmitting(true);
     setError(null);
     const results = await createPlaylistsFromBlocks(
-      resolvedBlocks
-        .filter((b) => b.name.trim())
-        .map((b) => ({ name: b.name.trim(), songPaths: b.songPaths })),
+      resolvedBlocks.map((b) => ({ name: b.name, songPaths: b.songPaths })),
     );
     setSubmitting(false);
     setTextResults(results);
@@ -207,13 +217,28 @@ export function CreatePlaylistDialog({
           <TabsContent value="text" className="mt-4 space-y-4">
             {!textResults ? (
               <>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Playlist name (used unless the text below sets its own)"
-                  className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                />
                 <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      Wrap each playlist in{" "}
+                      <code className="rounded bg-muted px-1 py-0.5">--playlistadd Name</code> /{" "}
+                      <code className="rounded bg-muted px-1 py-0.5">--playlistend</code>, one song
+                      per line inside. Define as many playlists as you like — lines outside a block
+                      are ignored.
+                    </p>
+                    <button
+                      onClick={() => void handleCopyPrompt()}
+                      title="Copy a ready-to-use prompt for an AI to sort your library into playlists"
+                      className="ml-3 flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs transition-colors hover:border-primary hover:text-primary"
+                    >
+                      {copied ? (
+                        <Check className="h-3.5 w-3.5 text-success" />
+                      ) : (
+                        <Clipboard className="h-3.5 w-3.5" />
+                      )}
+                      {copied ? "Copied" : "Copy AI prompt"}
+                    </button>
+                  </div>
                   <textarea
                     value={text}
                     onChange={(e) => setText(e.target.value)}
@@ -221,13 +246,6 @@ export function CreatePlaylistDialog({
                     placeholder={TEXT_PLACEHOLDER}
                     className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
                   />
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    One song per line. Wrap a block in{" "}
-                    <code className="rounded bg-muted px-1 py-0.5">--playlistadd Name</code> /{" "}
-                    <code className="rounded bg-muted px-1 py-0.5">--playlistend</code> to create
-                    more than one playlist at once — anything outside a block goes into the
-                    playlist named above.
-                  </p>
                 </div>
 
                 {resolvedBlocks.length > 0 && (
@@ -238,7 +256,7 @@ export function CreatePlaylistDialog({
                       return (
                         <div key={`${b.name}-${i}`}>
                           <p className="text-sm font-semibold">
-                            {b.name || <span className="italic text-muted-foreground">Unnamed</span>}
+                            {b.name}
                             <span className="ml-2 text-xs font-normal text-muted-foreground">
                               {matched} matched
                               {unmatched.length > 0 ? ` · ${unmatched.length} not found` : ""}

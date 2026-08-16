@@ -1,0 +1,15 @@
+services:
+  musicflow:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - deps:/usr/local/lib/python3.12/site-packages
+      - downloads:/root/Downloads/Musicflow
+    environment:
+      - FLASK_DEBUG=1
+
+volumes:
+  deps:
+  downloads:

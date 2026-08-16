@@ -1,0 +1,49 @@
+# ── Python (musicflow-api) ──
+venv/
+__pycache__/
+*.pyc
+musicflow-api/build/
+musicflow-api/dist/
+musicflow-api/bin/
+musicflow-api/installer_output/
+
+# ── Node / Vite (musicflow-dash) ──
+node_modules/
+musicflow-dash/dist/
+musicflow-dash/dist-ssr/
+.output/
+.vinxi/
+.tanstack/
+.nitro/
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local git backups from repo consolidation
+.git-old-backup/
+
+# CLI run output / stale duplicate build spec
+musicflow-api/results.txt
+musicflow-api/MusicGrab.spec

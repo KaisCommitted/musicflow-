@@ -116,7 +116,23 @@ def parse_artist_title(video_title: str) -> tuple[str | None, str]:
 # Megalobiz was dropped too: www.megalobiz.com consistently connect-times-out at 2s, reproduced
 # from two different networks — the host itself looks unreachable/overloaded, not something
 # fixable on our end.
-LYRICS_SOURCE_ORDER = ["lrclib", "netease", "lrclib-exact", "lrclib-search"]
+#
+# lyrics-ovh and genius added as broader-coverage fallbacks (both plain/unsynced text, no API
+# key). lyrics-ovh sits ahead of genius since it's a clean direct lookup; genius is scraped from
+# genius.com's lyrics page and needs _clean_genius_text() to strip page boilerplate (contributor
+# count, translation links, page title, an optional annotation blurb) that gets scraped in ahead
+# of the actual lyrics — more fragile to Genius changing their page markup, so it's last.
+LYRICS_SOURCE_ORDER = ["lrclib", "netease", "lrclib-exact", "lrclib-search", "lyrics-ovh", "genius"]
+
+# Matches everything from the start of a scraped Genius result through the "{Title} Lyrics"
+# page heading, plus an optional annotation blurb ending in "Read More" right after it — see
+# LYRICS_SOURCE_ORDER comment above for why this is needed.
+_GENIUS_BOILERPLATE_RE = re.compile(r"^.*?\bLyrics\n+(?:.*?Read More\n+)?", re.DOTALL)
+
+
+def _clean_genius_text(text: str) -> str:
+    m = _GENIUS_BOILERPLATE_RE.match(text)
+    return text[m.end():].strip() if m else text.strip()
 
 
 def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query: str) -> tuple[str | None, str | None]:
@@ -124,7 +140,7 @@ def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query:
     - (text, None): found
     - (None, None): legitimate miss — the source has nothing for this song
     - (None, error): the request itself failed (timeout, connection error, etc.)"""
-    from syncedlyrics.providers import Lrclib, NetEase
+    from syncedlyrics.providers import Lrclib, NetEase, Genius
     from syncedlyrics.utils import TargetType
 
     # Suppress noisy syncedlyrics internal logging
@@ -132,11 +148,13 @@ def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query:
 
     search_term = f"{artist} {title}" if artist else query
 
-    if method in ("lrclib", "netease"):
-        provider = {"lrclib": Lrclib, "netease": NetEase}[method]()
+    if method in ("lrclib", "netease", "genius"):
+        provider = {"lrclib": Lrclib, "netease": NetEase, "genius": Genius}[method]()
         try:
             lrc = provider.get_lrc(search_term)
             text = lrc.to_str(TargetType.PREFER_SYNCED) if lrc else None
+            if method == "genius" and text:
+                text = _clean_genius_text(text)
             return (text, None) if text else (None, None)
         except Exception as e:
             return None, str(e)
@@ -167,11 +185,28 @@ def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query:
         except Exception as e:
             return None, str(e)
 
+    if method == "lyrics-ovh":
+        if not artist:
+            return None, None
+        try:
+            url = f"https://api.lyrics.ovh/v1/{urllib.parse.quote(artist)}/{urllib.parse.quote(title)}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Musicflow/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                text = data.get("lyrics")
+                return (text, None) if text else (None, None)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None, None
+            return None, str(e)
+        except Exception as e:
+            return None, str(e)
+
     raise ValueError(f"Unknown lyrics source: {method}")
 
 
 def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> str | None:
-    """Fetch lyrics from all 4 sources in LYRICS_SOURCE_ORDER — every source is tried, none are
+    """Fetch lyrics from all 6 sources in LYRICS_SOURCE_ORDER — every source is tried, none are
     skipped after a first hit. The first hit in that priority order is returned as the main
     lyrics (same as before); every other hit is saved next to mp3_path as a backup file named
     {basename}.{method}.lrc, so the caller (or a future UI) can offer alternates to switch between."""

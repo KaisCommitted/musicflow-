@@ -106,7 +106,13 @@ def parse_artist_title(video_title: str) -> tuple[str | None, str]:
 
 # Priority order used both by fetch_lyrics() (single-song flow) and the batch lyrics job in
 # server.py (which retries only the sources that error, tracking each one individually).
-LYRICS_SOURCE_ORDER = ["lrclib", "netease", "megalobiz", "musixmatch", "lrclib-exact", "lrclib-search"]
+#
+# Musixmatch was tried as a 4th source here but was dropped: its unofficial desktop-app API
+# issues a guest token fine, then 401s every request after it — consistently, across unrelated
+# queries, while the exact same request succeeds from a different network. That pattern points
+# to them throttling/blocking by IP rather than a bug in our request, and it's not worth
+# hammering their private endpoint for a source that just doesn't come back for us.
+LYRICS_SOURCE_ORDER = ["lrclib", "netease", "megalobiz", "lrclib-exact", "lrclib-search"]
 
 
 def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query: str) -> tuple[str | None, str | None]:
@@ -114,16 +120,16 @@ def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query:
     - (text, None): found
     - (None, None): legitimate miss — the source has nothing for this song
     - (None, error): the request itself failed (timeout, connection error, etc.)"""
-    from syncedlyrics.providers import Lrclib, NetEase, Megalobiz, Musixmatch
+    from syncedlyrics.providers import Lrclib, NetEase, Megalobiz
     from syncedlyrics.utils import TargetType
 
-    # Suppress noisy syncedlyrics/Musixmatch internal logging
+    # Suppress noisy syncedlyrics internal logging
     logging.getLogger("syncedlyrics").setLevel(logging.WARNING)
 
     search_term = f"{artist} {title}" if artist else query
 
-    if method in ("lrclib", "netease", "megalobiz", "musixmatch"):
-        provider = {"lrclib": Lrclib, "netease": NetEase, "megalobiz": Megalobiz, "musixmatch": Musixmatch}[method]()
+    if method in ("lrclib", "netease", "megalobiz"):
+        provider = {"lrclib": Lrclib, "netease": NetEase, "megalobiz": Megalobiz}[method]()
         try:
             lrc = provider.get_lrc(search_term)
             text = lrc.to_str(TargetType.PREFER_SYNCED) if lrc else None
@@ -161,7 +167,7 @@ def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query:
 
 
 def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> str | None:
-    """Fetch lyrics from all 6 sources in LYRICS_SOURCE_ORDER — every source is tried, none are
+    """Fetch lyrics from all 5 sources in LYRICS_SOURCE_ORDER — every source is tried, none are
     skipped after a first hit. The first hit in that priority order is returned as the main
     lyrics (same as before); every other hit is saved next to mp3_path as a backup file named
     {basename}.{method}.lrc, so the caller (or a future UI) can offer alternates to switch between."""

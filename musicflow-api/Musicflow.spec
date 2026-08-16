@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('static', 'static'), ('music.ico', '.'), ('bin/ffmpeg.exe', 'bin')],
+    datas=[('static', 'static'), ('music.ico', '.'), ('bin/ffmpeg.exe', 'bin'), ('bin/ffprobe.exe', 'bin')],
     hiddenimports=['syncedlyrics'],
     hookspath=[],
     hooksconfig={},

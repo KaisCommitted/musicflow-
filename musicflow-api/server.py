@@ -1049,6 +1049,24 @@ def _process_lyrics_job(job_id: str):
     _allow_sleep()
 
 
+def _read_playlist_songs(folder: str, pl_path: str) -> list[str]:
+    """Reads a .m3u8's song entries, resolving each into a full path against `folder`.
+    Playlists are written with bare filenames (the portable form: copy the whole music
+    folder anywhere — another PC, a phone — and the playlist still resolves), but a full
+    path is accepted too so older files written before this convention still work."""
+    songs = []
+    try:
+        with open(pl_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                songs.append(line if os.path.isabs(line) else os.path.join(folder, line))
+    except OSError:
+        pass
+    return songs
+
+
 @app.route("/api/playlists", methods=["POST"])
 def create_playlists():
     data = request.get_json()
@@ -1066,15 +1084,7 @@ def create_playlists():
                 continue
             pl_path = os.path.join(folder, f)
             name = os.path.splitext(f)[0]
-            songs = []
-            try:
-                with open(pl_path, "r", encoding="utf-8") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            songs.append(line)
-            except Exception:
-                pass
+            songs = _read_playlist_songs(folder, pl_path)
             playlists_out.append({"name": name, "path": pl_path, "songs": songs})
         return jsonify({"playlists": playlists_out})
 
@@ -1414,7 +1424,8 @@ def delete_song():
             except OSError as e:
                 log.warning("[library] Failed to delete %s: %s", lrc_path, e)
 
-    # Strip this song from any .m3u8 playlists that reference it.
+    # Strip this song from any .m3u8 playlists that reference it (entries are usually
+    # just the bare filename now, but older files may still hold a full path).
     updated_playlists = []
     for f in os.listdir(folder):
         if not f.lower().endswith(".m3u8"):
@@ -1425,7 +1436,7 @@ def delete_song():
                 lines = fh.read().splitlines()
         except OSError:
             continue
-        kept = [ln for ln in lines if ln.strip() not in (path, real)]
+        kept = [ln for ln in lines if ln.strip() not in (path, real, base + ".mp3")]
         if len(kept) != len(lines):
             with open(pl_path, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(kept) + ("\n" if kept else ""))
@@ -1728,7 +1739,7 @@ def update_playlist():
     with open(pl_path, "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
         for song_path in songs:
-            f.write(f"{song_path}\n")
+            f.write(f"{os.path.basename(song_path)}\n")
 
     return jsonify({"playlist": {"name": safe_name, "path": pl_path, "songs": songs}})
 
@@ -1763,15 +1774,7 @@ def read_playlists():
             continue
         pl_path = os.path.join(folder, f)
         name = os.path.splitext(f)[0]
-        songs = []
-        try:
-            with open(pl_path, "r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        songs.append(line)
-        except Exception:
-            pass
+        songs = _read_playlist_songs(folder, pl_path)
         playlists.append({"name": name, "path": pl_path, "songs": songs})
 
     return jsonify({"playlists": playlists})

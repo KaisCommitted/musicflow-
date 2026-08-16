@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
+import {
+  comboFromEvent,
+  formatCombo,
+  KEYBIND_ACTIONS,
+  parseKeybinds,
+  setCapturingKeybind,
+  type KeybindActionId,
+} from "@/lib/keybinds";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
@@ -51,11 +60,62 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
+/** A button that shows the current keybind and, when clicked, listens for the next keypress to
+ * rebind it to (Escape cancels). Pauses the global shortcut handler while listening so the
+ * captured keystroke isn't also acted on. */
+function KeybindCapture({ value, onChange }: { value: string; onChange: (combo: string) => void }) {
+  const [listening, setListening] = useState(false);
+
+  useEffect(() => {
+    if (!listening) return;
+    setCapturingKeybind(true);
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      if (e.key === "Control" || e.key === "Shift" || e.key === "Alt" || e.key === "Meta") return;
+      if (e.key === "Escape") {
+        setListening(false);
+        return;
+      }
+      onChange(comboFromEvent(e));
+      setListening(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      setCapturingKeybind(false);
+    };
+  }, [listening, onChange]);
+
+  return (
+    <button
+      onClick={() => setListening(true)}
+      className={cn(
+        "min-w-[92px] rounded-lg border border-border px-3 py-1.5 text-xs font-medium tabular-nums transition-colors",
+        listening ? "border-primary text-primary" : "hover:border-primary/60",
+      )}
+    >
+      {listening ? "Press a key…" : formatCombo(value)}
+    </button>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     updateSettings({ [key]: value } as Partial<Settings>);
+
+  const keybinds = parseKeybinds(settings.keybinds);
+  const rebind = (actionId: KeybindActionId, combo: string) => {
+    const next = { ...keybinds };
+    // Two actions can't share a combo — whichever one had it loses it.
+    for (const id of Object.keys(next) as KeybindActionId[]) {
+      if (id !== actionId && next[id] === combo) next[id] = "";
+    }
+    next[actionId] = combo;
+    set("keybinds", JSON.stringify(next));
+  };
+  const resetKeybinds = () => set("keybinds", "");
 
   return (
     <div className="h-full overflow-y-auto px-8 py-8">
@@ -126,6 +186,30 @@ function SettingsPage() {
             onChange={(v) => set("fetchLyricsAutomatically", v)}
           />
         </Row>
+      </div>
+
+      <div className="mt-8 flex max-w-3xl items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Keybinds
+        </h2>
+        <button
+          onClick={resetKeybinds}
+          className="text-xs text-muted-foreground transition-colors hover:text-primary"
+        >
+          Reset to defaults
+        </button>
+      </div>
+      <div className="mt-3 max-w-3xl space-y-3">
+        {(["Playback", "Lyrics"] as const).map((category) => (
+          <div key={category} className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">{category}</p>
+            {KEYBIND_ACTIONS.filter((a) => a.category === category).map((a) => (
+              <Row key={a.id} title={a.label} description={a.description}>
+                <KeybindCapture value={keybinds[a.id]} onChange={(combo) => rebind(a.id, combo)} />
+              </Row>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );

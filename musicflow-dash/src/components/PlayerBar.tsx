@@ -55,8 +55,6 @@ export function PlayerBar() {
     toggleMute,
     queueOpen,
     setQueueOpen,
-    lyricsOpen,
-    setLyricsOpen,
     setFullscreen,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
@@ -134,7 +132,7 @@ export function PlayerBar() {
       </div>
 
       <div className="flex w-72 items-center justify-end gap-1">
-        <IconButton active={lyricsOpen} onClick={() => setLyricsOpen(!lyricsOpen)} aria-label="Lyrics">
+        <IconButton onClick={() => setFullscreen(true)} aria-label="Lyrics">
           <Mic2 className="h-4 w-4" />
         </IconButton>
         <IconButton active={queueOpen} onClick={() => setQueueOpen(!queueOpen)} aria-label="Queue">

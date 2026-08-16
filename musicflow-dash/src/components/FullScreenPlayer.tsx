@@ -1,12 +1,25 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Mic2,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+} from "lucide-react";
 import { AlbumArt } from "@/components/AlbumArt";
 import { Waveform } from "@/components/Waveform";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePlayer } from "@/store/player";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
 import { formatTime } from "@/lib/format";
 import { gradientFromString } from "@/lib/colors";
+import { lyricsSourceLabel } from "@/lib/lyricsSources";
 import { cn } from "@/lib/utils";
 
 export function FullScreenPlayer() {
@@ -24,12 +37,24 @@ export function FullScreenPlayer() {
     currentTime,
     duration,
     seek,
+    lyricsOffset,
+    nudgeLyricsOffset,
+    setLyricsSynced,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
   const total = duration || song?.duration || 0;
-  const { lines } = useLyrics(fullscreen ? song : null, total);
-  const active = activeLyricIndex(lines, currentTime);
+  const { sources, activeMethod, lines, synced, switchSource } = useLyrics(
+    fullscreen ? song : null,
+    total,
+  );
+  // Positive offset delays the lyrics (they light up later relative to the audio).
+  const active = activeLyricIndex(lines, currentTime - lyricsOffset);
   const listRef = useRef<HTMLDivElement>(null);
+  const realSources = sources.filter((s) => s.method !== "demo");
+
+  useEffect(() => {
+    setLyricsSynced(synced);
+  }, [synced, setLyricsSynced]);
 
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-line="${active}"]`);
@@ -152,33 +177,110 @@ export function FullScreenPlayer() {
                 </div>
               </div>
 
-              <div
-                ref={listRef}
-                className="overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]"
-              >
-                {lines.length === 0 ? (
-                  <p className="text-center text-sm text-muted-foreground">No lyrics found.</p>
-                ) : (
-                  <div className="space-y-5 px-6">
-                    {lines.map((line, i) => (
-                      <motion.p
-                        key={`${line.time}-${i}`}
-                        data-line={i}
-                        animate={{
-                          opacity: i === active ? 1 : i < active ? 0.28 : 0.5,
-                          scale: i === active ? 1.03 : 1,
-                        }}
-                        transition={{ duration: 0.3 }}
+              <div className="flex min-h-0 flex-col">
+                {lines.length > 0 && (
+                  <div className="mb-2 flex items-center justify-between gap-3 px-6">
+                    <div className="flex items-center gap-2">
+                      <span
                         className={cn(
-                          "origin-left text-xl leading-relaxed",
-                          i === active ? "font-semibold text-primary" : "text-foreground/80",
+                          "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                          synced ? "bg-success/15 text-success" : "bg-muted text-muted-foreground",
                         )}
                       >
-                        {line.text}
-                      </motion.p>
-                    ))}
+                        {synced ? "Synced" : "Plain"}
+                      </span>
+                      {realSources.length > 1 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              aria-label="Switch lyrics source"
+                              className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-card/60 hover:text-foreground"
+                            >
+                              <Mic2 className="h-3.5 w-3.5" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="start" className="w-56">
+                            {sources.map((s) => (
+                              <button
+                                key={s.method}
+                                onClick={() => switchSource(s.method)}
+                                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <Check
+                                    className={cn(
+                                      "h-3 w-3 text-primary",
+                                      s.method !== activeMethod && "invisible",
+                                    )}
+                                  />
+                                  {lyricsSourceLabel(s.method)}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "text-[9px] font-semibold uppercase",
+                                    s.synced ? "text-success" : "text-muted-foreground",
+                                  )}
+                                >
+                                  {s.synced ? "Synced" : "Plain"}
+                                </span>
+                              </button>
+                            ))}
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                    {synced && (
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <button
+                          onClick={() => nudgeLyricsOffset(-5)}
+                          aria-label="Advance lyrics 5 seconds"
+                          className="rounded-md border border-border px-2 py-0.5 transition-colors hover:border-primary hover:text-primary"
+                        >
+                          −5s
+                        </button>
+                        <span className="w-12 text-center tabular-nums">
+                          {lyricsOffset > 0 ? "+" : ""}
+                          {lyricsOffset.toFixed(1)}s
+                        </span>
+                        <button
+                          onClick={() => nudgeLyricsOffset(5)}
+                          aria-label="Delay lyrics 5 seconds"
+                          className="rounded-md border border-border px-2 py-0.5 transition-colors hover:border-primary hover:text-primary"
+                        >
+                          +5s
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
+                <div
+                  ref={listRef}
+                  className="min-h-0 flex-1 overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]"
+                >
+                  {lines.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground">No lyrics found.</p>
+                  ) : (
+                    <div className="space-y-5 px-6">
+                      {lines.map((line, i) => (
+                        <motion.p
+                          key={`${line.time}-${i}`}
+                          data-line={i}
+                          animate={{
+                            opacity: i === active ? 1 : i < active ? 0.28 : 0.5,
+                            scale: i === active ? 1.03 : 1,
+                          }}
+                          transition={{ duration: 0.3 }}
+                          className={cn(
+                            "origin-left text-xl leading-relaxed",
+                            i === active ? "font-semibold text-primary" : "text-foreground/80",
+                          )}
+                        >
+                          {line.text}
+                        </motion.p>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

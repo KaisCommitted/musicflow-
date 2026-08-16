@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import type { Song } from "@/lib/api";
-import { getLocalLyrics } from "@/lib/api";
+import { getLyricsSources, setLyricsSource } from "@/lib/api";
 
 export interface LyricLine {
   time: number;
   text: string;
+}
+
+interface LyricsSourceOption {
+  method: string;
+  synced: boolean;
+  lines: LyricLine[];
 }
 
 const DEMO = `In the low light of a borrowed room
@@ -35,24 +41,38 @@ function parse(raw: string, duration: number): LyricLine[] {
   return lines.map((text, i) => ({ time: step * (i + 1), text: text.trim() }));
 }
 
+const DEMO_METHOD = "demo";
+
 export function useLyrics(song: Song | null, duration: number) {
-  const [lines, setLines] = useState<LyricLine[]>([]);
+  const [sources, setSources] = useState<LyricsSourceOption[]>([]);
+  const [activeMethod, setActiveMethod] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     if (!song) {
-      setLines([]);
+      setSources([]);
+      setActiveMethod(null);
       return;
     }
     setLoading(true);
-    getLocalLyrics(song.path)
+    getLyricsSources(song.path)
       .then((r) => {
         if (cancelled) return;
-        setLines(parse(r.lyrics ?? DEMO, duration));
+        if (r.sources.length === 0) {
+          setSources([{ method: DEMO_METHOD, synced: false, lines: parse(DEMO, duration) }]);
+          setActiveMethod(DEMO_METHOD);
+          return;
+        }
+        setSources(
+          r.sources.map((s) => ({ method: s.method, synced: s.synced, lines: parse(s.text, duration) })),
+        );
+        setActiveMethod(r.sources.find((s) => s.active)?.method ?? r.sources[0]!.method);
       })
       .catch(() => {
-        if (!cancelled) setLines(parse(DEMO, duration));
+        if (cancelled) return;
+        setSources([{ method: DEMO_METHOD, synced: false, lines: parse(DEMO, duration) }]);
+        setActiveMethod(DEMO_METHOD);
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -62,7 +82,22 @@ export function useLyrics(song: Song | null, duration: number) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song?.path]);
 
-  return { lines, loading };
+  const active = sources.find((s) => s.method === activeMethod) ?? null;
+
+  const switchSource = (method: string) => {
+    if (!song || method === DEMO_METHOD || method === activeMethod) return;
+    setActiveMethod(method); // optimistic — the UI already knows this source's text
+    void setLyricsSource(song.path, method).catch(() => undefined);
+  };
+
+  return {
+    sources,
+    activeMethod,
+    lines: active?.lines ?? [],
+    synced: active?.synced ?? false,
+    loading,
+    switchSource,
+  };
 }
 
 export function activeLyricIndex(lines: LyricLine[], time: number) {

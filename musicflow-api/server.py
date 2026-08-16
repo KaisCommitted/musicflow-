@@ -851,17 +851,11 @@ def _seed_lyrics_sources(item: dict, folder: str, existing_files: set[str]) -> N
             pass  # leave it pending — it'll just be fetched normally
 
 
-def _sync_lyrics_files(item: dict, filepath: str) -> None:
-    """Make sure the ID3 tag / unsuffixed .lrc reflect the highest-priority source found so far.
-    Every found source already has its own {basename}.{method}.lrc backup file (written the
-    moment it's found, see process_item), so nothing needs to happen to the previous main when
-    the pick shifts — it already has its own file from when it was found."""
-    sources = item["sources"]
-    best = next((m for m in LYRICS_SOURCE_ORDER if sources[m]["status"] == "found"), None)
-    if not best or item.get("main_method") == best:
-        return
-    text = sources[best]["text"]
-
+def _write_main_lyrics(filepath: str, text: str) -> None:
+    """Write `text` as the song's main lyrics: the ID3 USLT tag, and the unsuffixed
+    {basename}.lrc sidecar if it's synced (removing that sidecar if the new main is plain text).
+    Shared by the batch job's auto priority-swap (_sync_lyrics_files) and the manual
+    set-source endpoint (set_lyrics_source)."""
     try:
         try:
             tags = ID3(filepath)
@@ -882,10 +876,20 @@ def _sync_lyrics_files(item: dict, filepath: str) -> None:
         elif os.path.exists(lrc_path):
             os.remove(lrc_path)
     except Exception as e:
-        # The lyrics are still safe in their own {method}.lrc backup even if embedding into the
-        # ID3 tag / main .lrc fails — not worth failing the whole song over.
-        log.warning("[gen-lyrics] Failed to write ID3/main .lrc for %s (%s): %s", filepath, best, e)
+        log.warning("[lyrics] Failed to write ID3/main .lrc for %s: %s", filepath, e)
 
+
+def _sync_lyrics_files(item: dict, filepath: str) -> None:
+    """Make sure the ID3 tag / unsuffixed .lrc reflect the highest-priority source found so far.
+    Every found source already has its own {basename}.{method}.lrc backup file (written the
+    moment it's found, see process_item), so nothing needs to happen to the previous main when
+    the pick shifts — it already has its own file from when it was found."""
+    sources = item["sources"]
+    best = next((m for m in LYRICS_SOURCE_ORDER if sources[m]["status"] == "found"), None)
+    if not best or item.get("main_method") == best:
+        return
+
+    _write_main_lyrics(filepath, sources[best]["text"])
     item["main_method"] = best
     log.info("[gen-lyrics] ✓ %s (main: %s)", item["file"], best)
 
@@ -1448,31 +1452,94 @@ def get_cover():
         return jsonify({"error": "No artwork"}), 404
 
 
+def _read_main_lyrics(path: str) -> str | None:
+    """The song's current main lyrics: the embedded USLT tag, falling back to the unsuffixed
+    {basename}.lrc sidecar."""
+    try:
+        tags = ID3(path)
+        uslts = tags.getall("USLT")
+        if uslts and uslts[0].text:
+            return uslts[0].text
+    except Exception:
+        pass
+
+    lrc_path = path.rsplit(".", 1)[0] + ".lrc"
+    if os.path.isfile(lrc_path):
+        try:
+            with open(lrc_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+
+    return None
+
+
 @app.route("/api/local-lyrics")
 def get_local_lyrics():
     path = request.args.get("path", "").strip()
     if not path or not os.path.isfile(path):
         return jsonify({"lyrics": None})
+    return jsonify({"lyrics": _read_main_lyrics(path)})
 
-    # Try embedded USLT tag first
-    try:
-        tags = ID3(path)
-        uslts = tags.getall("USLT")
-        if uslts and uslts[0].text:
-            return jsonify({"lyrics": uslts[0].text})
-    except Exception:
-        pass
 
-    # Fall back to .lrc sidecar file
-    lrc_path = path.rsplit(".", 1)[0] + ".lrc"
-    if os.path.isfile(lrc_path):
+@app.route("/api/lyrics/sources")
+def get_lyrics_sources():
+    """Every lyrics source that has ever succeeded for this song — each one already has its own
+    {basename}.{method}.lrc backup on disk (written the moment it was found, see
+    _write_lyrics_backup) — tagged with whether it's synced and whether it's the current main."""
+    path = request.args.get("path", "").strip()
+    if not path or not os.path.isfile(path):
+        return jsonify({"sources": []})
+
+    current = _read_main_lyrics(path)
+    base = os.path.splitext(os.path.basename(path))[0]
+    folder = os.path.dirname(path)
+
+    sources = []
+    for method in LYRICS_SOURCE_ORDER:
+        backup_path = os.path.join(folder, f"{base}.{method}.lrc")
+        if not os.path.isfile(backup_path):
+            continue
         try:
-            with open(lrc_path, "r", encoding="utf-8") as f:
-                return jsonify({"lyrics": f.read()})
+            with open(backup_path, "r", encoding="utf-8") as f:
+                text = f.read()
         except Exception:
-            pass
+            continue
+        if not text.strip():
+            continue
+        sources.append({
+            "method": method,
+            "synced": text.lstrip().startswith("["),
+            "active": text == current,
+            "text": text,
+        })
 
-    return jsonify({"lyrics": None})
+    return jsonify({"sources": sources})
+
+
+@app.route("/api/lyrics/set-source", methods=["POST"])
+def set_lyrics_source():
+    """Switch a song's main lyrics to one of its already-found sources — persists like the
+    batch job's auto priority-swap, just picked by the user instead of LYRICS_SOURCE_ORDER."""
+    data = request.get_json()
+    path = data.get("path", "").strip()
+    method = data.get("method", "").strip()
+    if not path or not os.path.isfile(path) or method not in LYRICS_SOURCE_ORDER:
+        return jsonify({"error": "Invalid path or method"}), 400
+
+    base = os.path.splitext(os.path.basename(path))[0]
+    backup_path = os.path.join(os.path.dirname(path), f"{base}.{method}.lrc")
+    if not os.path.isfile(backup_path):
+        return jsonify({"error": "No lyrics found for that source"}), 404
+
+    try:
+        with open(backup_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return jsonify({"error": "Failed to read lyrics"}), 500
+
+    _write_main_lyrics(path, text)
+    return jsonify({"ok": True, "lyrics": text, "synced": text.lstrip().startswith("[")})
 
 
 # ── Playlist CRUD endpoints ──

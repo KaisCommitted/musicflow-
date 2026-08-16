@@ -18,6 +18,8 @@ export interface Settings {
   autoScanOnStart: boolean;
   gaplessPlayback: boolean;
   fetchLyricsAutomatically: boolean;
+  /** JSON-encoded Record<KeybindActionId, string>; "" means defaults. */
+  keybinds: string;
 }
 
 interface LibraryState {
@@ -52,6 +54,7 @@ const defaultSettings: Settings = {
   autoScanOnStart: true,
   gaplessPlayback: true,
   fetchLyricsAutomatically: true,
+  keybinds: "",
 };
 
 function parseSettings(raw: Record<string, string>): Settings {
@@ -63,6 +66,7 @@ function parseSettings(raw: Record<string, string>): Settings {
     autoScanOnStart: raw["autoScanOnStart"] !== "false",
     gaplessPlayback: raw["gaplessPlayback"] !== "false",
     fetchLyricsAutomatically: raw["fetchLyricsAutomatically"] !== "false",
+    keybinds: raw["keybinds"] ?? "",
   };
 }
 
@@ -75,6 +79,7 @@ function serializeSettings(s: Settings): Record<string, string> {
     autoScanOnStart: String(s.autoScanOnStart),
     gaplessPlayback: String(s.gaplessPlayback),
     fetchLyricsAutomatically: String(s.fetchLyricsAutomatically),
+    keybinds: s.keybinds,
   };
 }
 

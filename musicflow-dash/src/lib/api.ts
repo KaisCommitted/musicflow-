@@ -222,6 +222,27 @@ export const localArtworkUrl = (path: string) => `/api/cover?path=${encodeURICom
 export const getLocalLyrics = (path: string) =>
   req<LyricsResponse>(`/api/local-lyrics?path=${encodeURIComponent(path)}`);
 
+/** Every lyrics source that has ever been found for this song (each saved as its own
+ * {basename}.{method}.lrc backup) — used to switch between them like picking a subtitle track. */
+export interface LyricsSource {
+  method: string;
+  synced: boolean;
+  /** true if this is the source currently embedded as the song's main lyrics */
+  active: boolean;
+  text: string;
+}
+
+export const getLyricsSources = (path: string) =>
+  req<{ sources: LyricsSource[] }>(`/api/lyrics/sources?path=${encodeURIComponent(path)}`);
+
+/** Persists the pick: overwrites the ID3 USLT tag + main .lrc, same as the batch job's
+ * priority-order auto-swap. */
+export const setLyricsSource = (path: string, method: string) =>
+  req<{ ok: boolean; lyrics: string; synced: boolean }>("/api/lyrics/set-source", {
+    method: "POST",
+    body: JSON.stringify({ path, method }),
+  });
+
 /** TODO(backend): POST /api/playlist/create { folder, name } → writes an empty .m3u8. */
 export const createPlaylist = (folder: string, name: string) =>
   req<{ playlist: Playlist }>("/api/playlist/create", {

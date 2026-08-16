@@ -81,6 +81,12 @@ def init_db():
             FOREIGN KEY (history_id) REFERENCES history(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS lyrics_not_found (
+            path TEXT NOT NULL,
+            method TEXT NOT NULL,
+            PRIMARY KEY (path, method)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
         CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album);
         CREATE INDEX IF NOT EXISTS idx_playlist_songs_path ON playlist_songs(song_path);
@@ -138,6 +144,32 @@ def remove_stale_songs(folder: str, current_paths: set[str]):
     if stale:
         get_conn().executemany("DELETE FROM songs WHERE path = ?", [(p,) for p in stale])
         get_conn().commit()
+
+
+# ── Lyrics scan memory ──
+# A source that's been queried and came back with nothing is remembered here so the batch
+# lyrics job never re-queries it — mirrors how a *found* source is remembered via its
+# {basename}.{method}.lrc backup file on disk (see _seed_lyrics_sources in server.py).
+
+def get_lyrics_not_found(paths: list[str]) -> dict[str, set[str]]:
+    """Methods already confirmed to have no lyrics, keyed by song path."""
+    if not paths:
+        return {}
+    placeholders = ",".join("?" * len(paths))
+    rows = get_conn().execute(
+        f"SELECT path, method FROM lyrics_not_found WHERE path IN ({placeholders})", paths
+    ).fetchall()
+    result: dict[str, set[str]] = {}
+    for r in rows:
+        result.setdefault(r["path"], set()).add(r["method"])
+    return result
+
+
+def mark_lyrics_not_found(path: str, method: str):
+    get_conn().execute(
+        "INSERT OR IGNORE INTO lyrics_not_found (path, method) VALUES (?, ?)", (path, method)
+    )
+    get_conn().commit()
 
 
 # ── History ──

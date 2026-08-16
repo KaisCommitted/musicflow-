@@ -832,23 +832,30 @@ def _derive_lyrics_status(sources: dict) -> str:
     return "not_found"
 
 
-def _seed_lyrics_sources(item: dict, folder: str, existing_files: set[str]) -> None:
+def _seed_lyrics_sources(item: dict, folder: str, existing_files: set[str], not_found: set[str]) -> None:
     """A source's backup file ({basename}.{method}.lrc) is written the moment that source is
     found and never touched again, so its presence on disk — from this job's own earlier work
     or a completely separate past run — is a trustworthy signal that source already succeeded.
-    Seed it in so it's never re-queried."""
+    Seed it in so it's never re-queried.
+
+    `not_found` is that same idea for the opposite outcome: methods the db remembers as having
+    turned up nothing for this song on a past run (see db.get_lyrics_not_found). It only applies
+    when the backup file isn't there — if the backup file reappeared (or was never queried),
+    that takes priority and the source gets a real chance."""
     base = os.path.splitext(item["file"])[0]
     for method in LYRICS_SOURCE_ORDER:
         name = f"{base}.{method}.lrc"
-        if name not in existing_files:
-            continue
-        try:
-            with open(os.path.join(folder, name), "r", encoding="utf-8") as f:
-                text = f.read()
-            if text.strip():
-                item["sources"][method] = {"status": "found", "error": None, "text": text}
-        except Exception:
-            pass  # leave it pending — it'll just be fetched normally
+        if name in existing_files:
+            try:
+                with open(os.path.join(folder, name), "r", encoding="utf-8") as f:
+                    text = f.read()
+                if text.strip():
+                    item["sources"][method] = {"status": "found", "error": None, "text": text}
+                    continue
+            except Exception:
+                pass  # leave it pending — it'll just be fetched normally
+        if method in not_found:
+            item["sources"][method] = {"status": "not_found", "error": None, "text": None}
 
 
 def _write_main_lyrics(filepath: str, text: str) -> None:
@@ -972,6 +979,7 @@ def _process_lyrics_job(job_id: str):
                     log.warning("[gen-lyrics] %s error for %s: %s", method, item["file"], error)
                 else:
                     sources[method] = {"status": "not_found", "error": None, "text": None}
+                    db.mark_lyrics_not_found(filepath, method)
         except Exception as e:
             # Something unexpected (not a per-source fetch failure, which fetch_lyrics_from_source
             # already turns into (None, error)) — mark whatever we didn't get to as errored so
@@ -987,15 +995,20 @@ def _process_lyrics_job(job_id: str):
             item["error"] = "No lyrics found"
             log.info("[gen-lyrics] ✗ No lyrics: %s", item["file"])
 
-    # Seed already-resolved sources from existing backup files before doing any network calls.
+    # Seed already-resolved sources from existing backup files and past not-found results
+    # before doing any network calls — a song where every source is already accounted for
+    # (found on disk, or remembered as not_found) resolves right here with zero fetches.
     existing_files = set(os.listdir(folder))
+    not_found_map = db.get_lyrics_not_found([os.path.join(folder, item["file"]) for item in job["items"]])
     for item in job["items"]:
-        _seed_lyrics_sources(item, folder, existing_files)
         filepath = os.path.join(folder, item["file"])
+        _seed_lyrics_sources(item, folder, existing_files, not_found_map.get(filepath, set()))
         _sync_lyrics_files(item, filepath)
         derived = _derive_lyrics_status(item["sources"])
         if derived != "processing":
             item["status"] = derived
+            if derived == "not_found":
+                item["error"] = "No lyrics found"
 
     for cycle in range(LYRICS_MAX_RETRY_CYCLES):
         if job.get("cancelled"):

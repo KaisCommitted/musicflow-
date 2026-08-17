@@ -19,6 +19,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { AlbumArt } from "@/components/AlbumArt";
+import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { Waveform } from "@/components/Waveform";
 import { LikeButton } from "@/components/LikeButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -169,6 +170,8 @@ export function FullScreenPlayer() {
                 </IconSwap>
               </motion.button>
             </div>
+
+            <AudioVisualizer className="px-14 opacity-70" />
 
             <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
               <div className="flex flex-col items-center justify-center gap-8">

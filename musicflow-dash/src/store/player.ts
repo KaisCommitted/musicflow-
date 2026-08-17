@@ -83,6 +83,13 @@ const dedupingLocalStorage: StateStorage = {
 let audio: HTMLAudioElement | null = null;
 let sleepTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+/** The shared <audio> element, for the audio visualizer's AnalyserNode tap. Everything else
+ * in this file should keep using the private getAudio() below — this is just a read-only
+ * escape hatch for code outside the store. */
+export function getAudioElement(): HTMLAudioElement | null {
+  return getAudio();
+}
+
 function getAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (!audio) {

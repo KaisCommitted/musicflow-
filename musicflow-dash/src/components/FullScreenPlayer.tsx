@@ -14,10 +14,15 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Volume1,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { AlbumArt } from "@/components/AlbumArt";
 import { Waveform } from "@/components/Waveform";
+import { LikeButton } from "@/components/LikeButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
@@ -42,6 +47,10 @@ export function FullScreenPlayer() {
     duration,
     seek,
     setLyricsSynced,
+    volume,
+    muted,
+    setVolume,
+    toggleMute,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
   const total = duration || song?.duration || 0;
@@ -182,7 +191,10 @@ export function FullScreenPlayer() {
                 </AnimatePresence>
 
                 <div className="w-full max-w-md text-center">
-                  <h2 className="truncate text-2xl font-bold">{song.title}</h2>
+                  <div className="flex items-center justify-center gap-2">
+                    <h2 className="min-w-0 truncate text-2xl font-bold">{song.title}</h2>
+                    <LikeButton songPath={song.path} size="sm" className="shrink-0" />
+                  </div>
                   <p className="mt-1 truncate text-sm text-muted-foreground">
                     {song.artist} — {song.album}
                   </p>
@@ -262,6 +274,33 @@ export function FullScreenPlayer() {
                         )}
                       </IconSwap>
                     </motion.button>
+                  </div>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.88 }}
+                      onClick={toggleMute}
+                      aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:text-foreground"
+                    >
+                      <IconSwap id={muted || volume === 0 ? "off" : volume < 0.5 ? "low" : "high"}>
+                        {muted || volume === 0 ? (
+                          <VolumeX className="h-4 w-4" />
+                        ) : volume < 0.5 ? (
+                          <Volume1 className="h-4 w-4" />
+                        ) : (
+                          <Volume2 className="h-4 w-4" />
+                        )}
+                      </IconSwap>
+                    </motion.button>
+                    <Slider
+                      className="w-32"
+                      value={[muted ? 0 : Math.round(volume * 100)]}
+                      max={100}
+                      step={1}
+                      onValueChange={(v) => setVolume((v[0] ?? 0) / 100)}
+                      aria-label="Volume"
+                    />
                   </div>
                 </div>
               </div>

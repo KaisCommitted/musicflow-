@@ -58,6 +58,14 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           s.toggleMute();
           break;
+        case "volume-up":
+          e.preventDefault();
+          s.setVolume(Math.min(1, Math.round((s.volume + 0.05) * 100) / 100));
+          break;
+        case "volume-down":
+          e.preventDefault();
+          s.setVolume(Math.max(0, Math.round((s.volume - 0.05) * 100) / 100));
+          break;
         case "lyrics-offset-later":
           if (s.fullscreen && s.lyricsSynced) {
             e.preventDefault();

@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Play, Volume2 } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
+import { LikeButton } from "@/components/LikeButton";
 import { useLibrary } from "@/store/library";
 import { usePlayer, type PlayContext } from "@/store/player";
 import { useSongMenu } from "@/store/menu";
@@ -125,12 +126,13 @@ export function SongTable({
   return (
     <div className="surface overflow-hidden">
       {showHeader && (
-        <div className="grid grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px] items-center gap-4 border-b border-border px-4 py-2.5">
+        <div className="grid grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px_44px] items-center gap-4 border-b border-border px-4 py-2.5">
           <span className="text-[11px] uppercase tracking-widest text-muted-foreground">#</span>
           {header("title", "Title")}
           {header("artist", "Artist")}
           {header("album", "Album")}
           {header("duration", "Time", "justify-end")}
+          <span aria-hidden="true" />
         </div>
       )}
       <ul ref={listRef} className="relative" style={{ height: rowVirtualizer.getTotalSize() }}>
@@ -160,7 +162,7 @@ export function SongTable({
                 });
               }}
               className={cn(
-                "group grid cursor-default grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px] items-center gap-4 px-4 py-2 hover-row absolute top-0 left-0 w-full",
+                "group grid cursor-default grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px_44px] items-center gap-4 px-4 py-2 hover-row absolute top-0 left-0 w-full",
                 active && "bg-primary/10",
               )}
               style={{
@@ -193,6 +195,7 @@ export function SongTable({
               <span className="text-right text-xs tabular-nums text-muted-foreground">
                 {formatTime(song.duration)}
               </span>
+              <LikeButton songPath={song.path} size="sm" className="justify-self-center" />
             </li>
           );
         })}

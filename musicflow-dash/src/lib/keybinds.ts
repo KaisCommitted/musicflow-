@@ -7,6 +7,8 @@ export type KeybindActionId =
   | "previous-track"
   | "next-track"
   | "toggle-mute"
+  | "volume-up"
+  | "volume-down"
   | "lyrics-offset-later"
   | "lyrics-offset-earlier";
 
@@ -24,6 +26,8 @@ export const KEYBIND_ACTIONS: KeybindAction[] = [
   { id: "previous-track", label: "Previous track", description: "Jump to the previous song", category: "Playback" },
   { id: "next-track", label: "Next track", description: "Skip to the next song", category: "Playback" },
   { id: "toggle-mute", label: "Mute / unmute", description: "Toggle volume mute", category: "Playback" },
+  { id: "volume-up", label: "Volume up", description: "Raise the volume 5%", category: "Playback" },
+  { id: "volume-down", label: "Volume down", description: "Lower the volume 5%", category: "Playback" },
   {
     id: "lyrics-offset-later",
     label: "Delay lyrics",
@@ -45,6 +49,8 @@ export const DEFAULT_KEYBINDS: Record<KeybindActionId, string> = {
   "previous-track": "Ctrl+ArrowLeft",
   "next-track": "Ctrl+ArrowRight",
   "toggle-mute": "M",
+  "volume-up": "Ctrl+ArrowUp",
+  "volume-down": "Ctrl+ArrowDown",
   "lyrics-offset-later": "ArrowUp",
   "lyrics-offset-earlier": "ArrowDown",
 };

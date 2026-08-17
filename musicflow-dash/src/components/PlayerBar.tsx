@@ -17,6 +17,7 @@ import { motion } from "framer-motion";
 import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { AlbumArt } from "@/components/AlbumArt";
+import { LikeButton } from "@/components/LikeButton";
 import { usePlayer } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,7 @@ export function PlayerBar() {
           <p className="truncate text-sm font-semibold">{song.title}</p>
           <p className="truncate text-xs text-muted-foreground">{song.artist}</p>
         </div>
+        <LikeButton songPath={song.path} size="sm" className="shrink-0" />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">

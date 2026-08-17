@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Play, Volume2 } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
@@ -7,6 +8,7 @@ import { usePlayer, type PlayContext } from "@/store/player";
 import { useSongMenu } from "@/store/menu";
 import { colorFromString } from "@/lib/colors";
 import { formatTime } from "@/lib/format";
+import { useScrollContainer } from "@/lib/scrollContainer";
 import { cn } from "@/lib/utils";
 
 type SortKey = "index" | "title" | "artist" | "album" | "duration";
@@ -55,6 +57,16 @@ export function SongTable({
   const current = usePlayer((s) => s.current());
   const isPlaying = usePlayer((s) => s.isPlaying);
 
+  // Only the rows scrolled into view get mounted — with 900+ songs, rendering every
+  // row unconditionally is what makes the library heavy to paint (e.g. noticeably
+  // laggy closing the full-screen player back down to it). The list doesn't own its
+  // own scrollbar; it measures against the page-level scroll container from
+  // ScrollContainerContext so header/meta content above it keeps scrolling together
+  // with the table, same as before virtualization.
+  const scrollRef = useScrollContainer();
+  const listRef = useRef<HTMLUListElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+
   const sorted = useMemo(() => {
     if (sort.key === "index") return songs;
     const copy = [...songs];
@@ -69,6 +81,28 @@ export function SongTable({
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => ({ key, dir: s.key === key && s.dir === 1 ? -1 : 1 }));
+
+  // Re-measure how far the list sits from the top of the scroll container whenever
+  // the page around it changes size — switching tabs, drilling into an album, the
+  // UI-scale slider, etc. all shift that offset.
+  useLayoutEffect(() => {
+    const measure = () => setScrollMargin(listRef.current?.offsetTop ?? 0);
+    measure();
+    const container = scrollRef?.current;
+    if (!container) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [scrollRef, showHeader]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: sorted.length,
+    getScrollElement: () => scrollRef?.current ?? null,
+    estimateSize: () => 56,
+    overscan: 10,
+    scrollMargin,
+    getItemKey: (index) => `${sorted[index]!.id}-${index}`,
+  });
 
   const header = (key: SortKey, label: string, className?: string) => (
     <button
@@ -99,12 +133,16 @@ export function SongTable({
           {header("duration", "Time", "justify-end")}
         </div>
       )}
-      <ul>
-        {sorted.map((song, i) => {
+      <ul ref={listRef} className="relative" style={{ height: rowVirtualizer.getTotalSize() }}>
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const i = virtualRow.index;
+          const song = sorted[i]!;
           const active = current?.id === song.id;
           return (
             <li
-              key={`${song.id}-${i}`}
+              key={virtualRow.key}
+              data-index={i}
+              ref={rowVirtualizer.measureElement}
               onDoubleClick={() => playQueue(sorted, i, context)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -122,9 +160,12 @@ export function SongTable({
                 });
               }}
               className={cn(
-                "group grid cursor-default grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px] items-center gap-4 px-4 py-2 hover-row",
+                "group grid cursor-default grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px] items-center gap-4 px-4 py-2 hover-row absolute top-0 left-0 w-full",
                 active && "bg-primary/10",
               )}
+              style={{
+                transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
+              }}
             >
               <span className="grid h-8 w-8 place-items-center text-xs tabular-nums text-muted-foreground">
                 <button
@@ -135,11 +176,7 @@ export function SongTable({
                   <Play className="h-4 w-4 text-primary" />
                 </button>
                 <span className="group-hover:hidden">
-                  {active && isPlaying ? (
-                    <Volume2 className="h-4 w-4 text-primary" />
-                  ) : (
-                    i + 1
-                  )}
+                  {active && isPlaying ? <Volume2 className="h-4 w-4 text-primary" /> : i + 1}
                 </span>
               </span>
               <div className="flex min-w-0 items-center gap-3">

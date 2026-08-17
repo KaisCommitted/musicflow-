@@ -3,3 +3,4 @@ flask
 mutagen
 syncedlyrics
 pypresence
+Pillow

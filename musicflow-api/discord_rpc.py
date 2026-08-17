@@ -1,14 +1,25 @@
 """Discord Rich Presence — talks to the local Discord desktop client over its IPC pipe via
 pypresence (a tiny, dependency-free wrapper around that protocol).
 
-Entirely best-effort: Discord may not be installed, not running, or no client ID configured
-yet — none of that should ever break playback or the API request that triggered an update, so
-every failure here is caught and logged, never raised.
+The Client ID below identifies the Musicflow *application* to Discord (it picks the name shown
+on the presence card) — it is not tied to any one Discord account and isn't a secret. This is
+how every app with Discord Rich Presence ships (Spotify, VS Code, OBS, ...): one ID baked into
+the app, and it works immediately for any Discord user running it, with no per-user setup and
+no cap on how many people can use it — SET_ACTIVITY (all Rich Presence is) never goes through
+Discord's OAuth/approval-gated RPC surface (that gating — the "50 testers" / guild-count limits
+— applies to privileged RPC commands like guild/channel management, not to setting an activity).
+
+Entirely best-effort beyond that: Discord may not be installed or running, and neither should
+ever break playback or the API request that triggered an update — every failure here is caught
+and logged, never raised.
 """
 import logging
 import time
 
 log = logging.getLogger("musicflow")
+
+# Registered at discord.com/developers/applications — public identifier, safe to ship as-is.
+CLIENT_ID = "1538934409896398948"
 
 try:
     from pypresence import Presence
@@ -16,21 +27,18 @@ except ImportError:
     Presence = None
 
 _rpc = None
-_client_id: str | None = None
 
 
-def _ensure_connected(client_id: str) -> bool:
-    global _rpc, _client_id
+def _ensure_connected() -> bool:
+    global _rpc
     if Presence is None:
         return False
-    if _rpc is not None and _client_id == client_id:
+    if _rpc is not None:
         return True
-    _close()
     try:
-        rpc = Presence(client_id)
+        rpc = Presence(CLIENT_ID)
         rpc.connect()
         _rpc = rpc
-        _client_id = client_id
         return True
     except Exception as e:
         log.info("[discord] connect failed (Discord not running?): %s", e)
@@ -38,19 +46,17 @@ def _ensure_connected(client_id: str) -> bool:
 
 
 def _close():
-    global _rpc, _client_id
+    global _rpc
     if _rpc is not None:
         try:
             _rpc.close()
         except Exception:
             pass
     _rpc = None
-    _client_id = None
 
 
-def update(client_id: str, title: str, artist: str, is_playing: bool,
-           position: float, duration: float):
-    if not client_id or not _ensure_connected(client_id):
+def update(title: str, artist: str, is_playing: bool, position: float, duration: float):
+    if not _ensure_connected():
         return
     try:
         now = time.time()

@@ -1929,12 +1929,10 @@ def import_backup():
 @app.route("/api/discord/update", methods=["POST"])
 def discord_update():
     data = request.get_json() or {}
-    client_id = db.get_setting("discordClientId", "").strip()
     enabled = db.get_setting("discordEnabled", "false") == "true"
-    if not enabled or not client_id:
+    if not enabled:
         return jsonify({"ok": True, "active": False})
     discord_rpc.update(
-        client_id,
         str(data.get("title", "")),
         str(data.get("artist", "")),
         bool(data.get("is_playing")),

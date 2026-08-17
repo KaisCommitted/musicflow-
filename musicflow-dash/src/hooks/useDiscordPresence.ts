@@ -10,10 +10,9 @@ export function useDiscordPresence() {
   const song = usePlayer((s) => s.current());
   const isPlaying = usePlayer((s) => s.isPlaying);
   const discordEnabled = useLibrary((s) => s.settings.discordEnabled);
-  const discordClientId = useLibrary((s) => s.settings.discordClientId);
 
   useEffect(() => {
-    if (!discordEnabled || !discordClientId) return;
+    if (!discordEnabled) return;
     if (!song) {
       void clearDiscordPresence().catch(() => undefined);
       return;
@@ -28,7 +27,7 @@ export function useDiscordPresence() {
     // song?.id (not the whole song object) + isPlaying are the only things that should
     // re-trigger this — re-reading currentTime fresh above avoids re-running on every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [song?.id, isPlaying, discordEnabled, discordClientId]);
+  }, [song?.id, isPlaying, discordEnabled]);
 
   useEffect(() => {
     if (!discordEnabled) void clearDiscordPresence().catch(() => undefined);

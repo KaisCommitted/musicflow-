@@ -34,10 +34,9 @@ export interface Settings {
   fetchLyricsAutomatically: boolean;
   /** JSON-encoded Record<KeybindActionId, string>; "" means defaults. */
   keybinds: string;
+  /** Discord's Client ID is baked into the backend (discord_rpc.py) — it identifies the
+   * Musicflow app to Discord, not any one Discord account, so there's nothing to configure. */
   discordEnabled: boolean;
-  /** Discord Application (client) ID — from a free app registered at
-   * discord.com/developers/applications. Required for Rich Presence to do anything. */
-  discordClientId: string;
   scrobblingEnabled: boolean;
   /** Personal API token from listenbrainz.org/profile. */
   listenbrainzToken: string;
@@ -91,7 +90,6 @@ const defaultSettings: Settings = {
   fetchLyricsAutomatically: true,
   keybinds: "",
   discordEnabled: false,
-  discordClientId: "",
   scrobblingEnabled: false,
   listenbrainzToken: "",
 };
@@ -108,7 +106,6 @@ function parseSettings(raw: Record<string, string>): Settings {
     fetchLyricsAutomatically: raw["fetchLyricsAutomatically"] !== "false",
     keybinds: raw["keybinds"] ?? "",
     discordEnabled: raw["discordEnabled"] === "true",
-    discordClientId: raw["discordClientId"] ?? "",
     scrobblingEnabled: raw["scrobblingEnabled"] === "true",
     listenbrainzToken: raw["listenbrainzToken"] ?? "",
   };
@@ -126,7 +123,6 @@ function serializeSettings(s: Settings): Record<string, string> {
     fetchLyricsAutomatically: String(s.fetchLyricsAutomatically),
     keybinds: s.keybinds,
     discordEnabled: String(s.discordEnabled),
-    discordClientId: s.discordClientId,
     scrobblingEnabled: String(s.scrobblingEnabled),
     listenbrainzToken: s.listenbrainzToken,
   };

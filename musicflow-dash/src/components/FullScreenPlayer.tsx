@@ -53,6 +53,7 @@ export function FullScreenPlayer() {
   // "normal" is the existing scrolling list; "big" shows only the current line (plus
   // neighbours) at a much larger size. Sticky for the session, not persisted.
   const [lyricsMode, setLyricsMode] = useState<"normal" | "big">("normal");
+  const isBigMode = synced && lyricsMode === "big";
   const [docFullscreen, setDocFullscreen] = useState(false);
 
   useEffect(() => {
@@ -89,7 +90,9 @@ export function FullScreenPlayer() {
     const elRect = el.getBoundingClientRect();
     const delta = elRect.top + elRect.height / 2 - (containerRect.top + containerRect.height / 2);
     container.scrollBy({ top: delta, behavior: "smooth" });
-  }, [active]);
+    // lyricsMode is included so switching modes re-centers immediately — big mode's lines are a
+    // different size, so the old scroll position no longer centers the active line correctly.
+  }, [active, lyricsMode]);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -358,12 +361,7 @@ export function FullScreenPlayer() {
                 )}
                 <div
                   ref={listRef}
-                  className={cn(
-                    "min-h-0 flex-1",
-                    synced && lyricsMode === "big"
-                      ? "flex flex-col items-center justify-center"
-                      : "overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]",
-                  )}
+                  className="min-h-0 flex-1 overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]"
                 >
                   {lines.length === 0 ? (
                     <p className="text-center text-sm text-muted-foreground">No lyrics found.</p>
@@ -374,46 +372,40 @@ export function FullScreenPlayer() {
                         <p key={i}>{line.text}</p>
                       ))}
                     </div>
-                  ) : lyricsMode === "big" ? (
-                    <div className="flex flex-col items-center gap-6 px-10 text-center">
-                      <p className="min-h-[2.5rem] text-2xl text-foreground/35">
-                        {lines[active - 1]?.text ?? ""}
-                      </p>
-                      <AnimatePresence mode="wait">
-                        <motion.p
-                          key={active}
-                          initial={{ opacity: 0, y: 14 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -14 }}
-                          transition={{ duration: 0.3 }}
-                          className="text-4xl font-bold text-primary"
-                        >
-                          {lines[active]?.text ?? ""}
-                        </motion.p>
-                      </AnimatePresence>
-                      <p className="min-h-[2.5rem] text-2xl text-foreground/35">
-                        {lines[active + 1]?.text ?? ""}
-                      </p>
-                    </div>
                   ) : (
-                    <div className="space-y-5 px-6">
-                      {lines.map((line, i) => (
-                        <motion.p
-                          key={`${line.time}-${i}`}
-                          data-line={i}
-                          animate={{
-                            opacity: i === active ? 1 : i < active ? 0.28 : 0.5,
-                            scale: i === active ? 1.03 : 1,
-                          }}
-                          transition={{ duration: 0.3 }}
-                          className={cn(
-                            "origin-left text-xl leading-relaxed",
-                            i === active ? "font-semibold text-primary" : "text-foreground/80",
-                          )}
-                        >
-                          {line.text}
-                        </motion.p>
-                      ))}
+                    // Every line stays mounted the whole time — only its opacity/scale animate as
+                    // `active` moves. That's what makes this smooth: Framer tweens the existing
+                    // element to new target values instead of a key change unmounting one line and
+                    // mounting the next, which is what was causing the flicker/blank-gap in big mode.
+                    <div className={cn(isBigMode ? "space-y-8 px-10 text-center" : "space-y-5 px-6")}>
+                      {lines.map((line, i) => {
+                        const dist = Math.abs(i - active);
+                        return (
+                          <motion.p
+                            key={`${line.time}-${i}`}
+                            data-line={i}
+                            animate={
+                              isBigMode
+                                ? {
+                                    opacity: dist === 0 ? 1 : dist === 1 ? 0.45 : 0.08,
+                                    scale: dist === 0 ? 1.15 : dist === 1 ? 0.85 : 0.7,
+                                  }
+                                : {
+                                    opacity: i === active ? 1 : i < active ? 0.28 : 0.5,
+                                    scale: i === active ? 1.03 : 1,
+                                  }
+                            }
+                            transition={{ duration: 0.4, ease: "easeOut" }}
+                            className={cn(
+                              "leading-relaxed",
+                              isBigMode ? "origin-center text-3xl" : "origin-left text-xl",
+                              i === active ? "font-semibold text-primary" : "text-foreground/80",
+                            )}
+                          >
+                            {line.text}
+                          </motion.p>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

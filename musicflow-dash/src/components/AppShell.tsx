@@ -9,6 +9,7 @@ import { useLibrary } from "@/store/library";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDiscordPresence } from "@/hooks/useDiscordPresence";
 import { applyUiScale } from "@/lib/uiScale";
+import { initScrobbling } from "@/lib/scrobbling";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const theme = useLibrary((s) => s.settings.theme);
@@ -20,6 +21,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const refresh = useLibrary((s) => s.refresh);
   useKeyboardShortcuts();
   useDiscordPresence();
+
+  useEffect(() => {
+    initScrobbling();
+  }, []);
 
   useEffect(() => {
     void loadSettings();

@@ -19,6 +19,7 @@ from PIL import Image
 from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
+import scrobbling
 
 import yt_dlp
 
@@ -1947,6 +1948,40 @@ def discord_update():
 def discord_clear():
     discord_rpc.clear()
     return jsonify({"ok": True})
+
+
+# ── ListenBrainz scrobbling ──
+
+def _scrobbling_config() -> tuple[str, bool]:
+    token = db.get_setting("listenbrainzToken", "").strip()
+    enabled = db.get_setting("scrobblingEnabled", "false") == "true"
+    return token, enabled
+
+
+@app.route("/api/scrobble/now-playing", methods=["POST"])
+def scrobble_now_playing():
+    data = request.get_json() or {}
+    token, enabled = _scrobbling_config()
+    if not enabled or not token:
+        return jsonify({"ok": True, "active": False})
+    scrobbling.now_playing(
+        token, str(data.get("title", "")), str(data.get("artist", "")),
+        str(data.get("album", "")), float(data.get("duration") or 0),
+    )
+    return jsonify({"ok": True, "active": True})
+
+
+@app.route("/api/scrobble/listen", methods=["POST"])
+def scrobble_listen():
+    data = request.get_json() or {}
+    token, enabled = _scrobbling_config()
+    if not enabled or not token:
+        return jsonify({"ok": True, "active": False})
+    scrobbling.submit_listen(
+        token, str(data.get("title", "")), str(data.get("artist", "")),
+        str(data.get("album", "")), float(data.get("duration") or 0),
+    )
+    return jsonify({"ok": True, "active": True})
 
 
 if __name__ == "__main__":

@@ -370,3 +370,26 @@ export const updateDiscordPresence = (payload: {
 
 export const clearDiscordPresence = () =>
   req<{ ok: boolean }>("/api/discord/clear", { method: "POST" });
+
+/* ------------------------------ ListenBrainz scrobbling ---------------------------- */
+/* The user's token stays server-side (in the settings DB) — the frontend just reports what's
+ * playing, same shape as the Discord presence calls above. */
+
+interface ScrobblePayload {
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+}
+
+export const reportNowPlaying = (payload: ScrobblePayload) =>
+  req<{ ok: boolean; active: boolean }>("/api/scrobble/now-playing", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const submitScrobble = (payload: ScrobblePayload) =>
+  req<{ ok: boolean; active: boolean }>("/api/scrobble/listen", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });

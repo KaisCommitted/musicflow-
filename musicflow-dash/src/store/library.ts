@@ -38,6 +38,9 @@ export interface Settings {
   /** Discord Application (client) ID — from a free app registered at
    * discord.com/developers/applications. Required for Rich Presence to do anything. */
   discordClientId: string;
+  scrobblingEnabled: boolean;
+  /** Personal API token from listenbrainz.org/profile. */
+  listenbrainzToken: string;
 }
 
 interface LibraryState {
@@ -89,6 +92,8 @@ const defaultSettings: Settings = {
   keybinds: "",
   discordEnabled: false,
   discordClientId: "",
+  scrobblingEnabled: false,
+  listenbrainzToken: "",
 };
 
 function parseSettings(raw: Record<string, string>): Settings {
@@ -104,6 +109,8 @@ function parseSettings(raw: Record<string, string>): Settings {
     keybinds: raw["keybinds"] ?? "",
     discordEnabled: raw["discordEnabled"] === "true",
     discordClientId: raw["discordClientId"] ?? "",
+    scrobblingEnabled: raw["scrobblingEnabled"] === "true",
+    listenbrainzToken: raw["listenbrainzToken"] ?? "",
   };
 }
 
@@ -120,6 +127,8 @@ function serializeSettings(s: Settings): Record<string, string> {
     keybinds: s.keybinds,
     discordEnabled: String(s.discordEnabled),
     discordClientId: s.discordClientId,
+    scrobblingEnabled: String(s.scrobblingEnabled),
+    listenbrainzToken: s.listenbrainzToken,
   };
 }
 

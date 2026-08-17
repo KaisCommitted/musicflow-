@@ -251,6 +251,52 @@ function DiscordSection({
   );
 }
 
+/** ListenBrainz over Last.fm: a personal API token is a paste-and-go setup, where Last.fm
+ * needs a registered API key/secret plus a browser-based auth flow for comparatively little
+ * extra benefit — not worth the added complexity right now. */
+function ScrobblingSection({
+  settings,
+  set,
+}: {
+  settings: Settings;
+  set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+}) {
+  return (
+    <>
+      <Row
+        title="ListenBrainz scrobbling"
+        description="Submit listens to ListenBrainz — a song counts once you're past half its length (or 4 minutes, whichever is shorter)."
+      >
+        <Toggle on={settings.scrobblingEnabled} onChange={(v) => set("scrobblingEnabled", v)} />
+      </Row>
+      <Row
+        title="ListenBrainz token"
+        description={
+          <>
+            Your personal token from{" "}
+            <a
+              href="https://listenbrainz.org/settings/"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-primary"
+            >
+              listenbrainz.org/settings
+            </a>
+            . Recognition depends on how clean your artist/title tags are.
+          </>
+        }
+      >
+        <input
+          value={settings.listenbrainzToken}
+          onChange={(e) => set("listenbrainzToken", e.target.value.trim())}
+          placeholder="Paste your user token"
+          className="h-9 w-56 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-primary"
+        />
+      </Row>
+    </>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
@@ -356,6 +402,13 @@ function SettingsPage() {
       </h2>
       <div className="mt-3 max-w-3xl space-y-3">
         <DiscordSection settings={settings} set={set} />
+      </div>
+
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Scrobbling
+      </h2>
+      <div className="mt-3 max-w-3xl space-y-3">
+        <ScrobblingSection settings={settings} set={set} />
       </div>
 
       <div className="mt-8 flex max-w-3xl items-center justify-between">

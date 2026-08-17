@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Disc3, ListMusic, Play, Plus, Trash2, User } from "lucide-react";
+import { ArrowLeft, Disc3, Play, Plus, Trash2 } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
+import { ArtistArt } from "@/components/ArtistArt";
+import { PlaylistArt } from "@/components/PlaylistArt";
 import { SongTable } from "@/components/SongTable";
 import { CreatePlaylistDialog } from "@/components/library/CreatePlaylistDialog";
 import { useLibrary } from "@/store/library";
 import { usePlayer } from "@/store/player";
 import { useView } from "@/store/view";
-import { gradientFromString } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 
 export function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -122,12 +123,12 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
       <div>
         <BackButton label="All artists" onClick={back} />
         <div className="mb-6 flex items-center gap-6">
-          <div
-            className="grid h-32 w-32 place-items-center rounded-full shadow-elevated"
-            style={{ backgroundImage: gradientFromString(artist) }}
-          >
-            <User className="h-10 w-10 text-foreground/80" />
-          </div>
+          <ArtistArt
+            name={artist}
+            tracks={tracks}
+            className="h-32 w-32 rounded-full shadow-elevated"
+            iconClassName="h-10 w-10"
+          />
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Artist</p>
             <h2 className="mt-1 text-3xl font-bold">{artist}</h2>
@@ -165,12 +166,12 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
           onClick={() => openArtist(name)}
           className="surface flex flex-col items-center gap-3 p-5 transition-all hover:-translate-y-1 hover:shadow-elevated"
         >
-          <span
-            className="grid h-24 w-24 place-items-center rounded-full"
-            style={{ backgroundImage: gradientFromString(name) }}
-          >
-            <User className="h-8 w-8 text-foreground/80" />
-          </span>
+          <ArtistArt
+            name={name}
+            tracks={tracks}
+            className="h-24 w-24 rounded-full"
+            iconClassName="h-8 w-8"
+          />
           <span className="w-full truncate text-center text-sm font-semibold">{name}</span>
           <span className="text-xs text-muted-foreground">{tracks.length} tracks</span>
         </button>
@@ -195,12 +196,12 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
       <div>
         <BackButton label="All playlists" onClick={back} />
         <div className="mb-6 flex items-end gap-6">
-          <div
-            className="grid h-40 w-40 place-items-center rounded-2xl shadow-elevated"
-            style={{ backgroundImage: gradientFromString(playlist) }}
-          >
-            <ListMusic className="h-10 w-10 text-foreground/80" />
-          </div>
+          <PlaylistArt
+            name={playlist}
+            songs={tracks}
+            className="h-40 w-40 rounded-2xl shadow-elevated"
+            iconClassName="h-10 w-10"
+          />
           <div className="pb-2">
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Playlist</p>
             <h2 className="mt-1 text-3xl font-bold">{playlist}</h2>
@@ -262,6 +263,7 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5">
         {playlists.map((p) => {
           const selected = selectedPlaylists.includes(p.name);
+          const tracks = songs.filter((s) => p.songs.includes(s.path));
           return (
             <div
               key={p.name}
@@ -283,12 +285,12 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
                 />
               </label>
               <button onClick={() => openPlaylist(p.name)} className="w-full text-left">
-                <span
-                  className="mb-3 grid aspect-square w-full place-items-center rounded-xl"
-                  style={{ backgroundImage: gradientFromString(p.name) }}
-                >
-                  <ListMusic className="h-8 w-8 text-foreground/80" />
-                </span>
+                <PlaylistArt
+                  name={p.name}
+                  songs={tracks}
+                  className="mb-3 aspect-square w-full rounded-xl"
+                  iconClassName="h-8 w-8"
+                />
                 <span className="block truncate text-sm font-semibold">{p.name}</span>
                 <span className="block text-xs text-muted-foreground">
                   {p.songs.length} tracks

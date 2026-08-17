@@ -1,0 +1,72 @@
+name: Release
+
+# Push a tag like v1.2.3 to build the Windows installer and publish it as a GitHub Release.
+# Auto-update inside the app is intentionally not wired up yet — this just automates getting
+# a properly-versioned installer onto Releases, since electron-builder needs GH_TOKEN either
+# way and it's the same handful of steps as building locally.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Build frontend
+        working-directory: musicflow-dash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install backend dependencies
+        working-directory: musicflow-api
+        run: |
+          py -m pip install --upgrade pip
+          py -m pip install -r requirements.txt pyinstaller
+
+      - name: Fetch ffmpeg (bundled with the backend for downloads)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path musicflow-api/bin | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-extracted
+          $bin = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          Copy-Item $bin.FullName musicflow-api/bin/ffmpeg.exe
+          $probe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          Copy-Item $probe.FullName musicflow-api/bin/ffprobe.exe
+
+      - name: Freeze backend with PyInstaller
+        working-directory: musicflow-api
+        run: py -m PyInstaller musicflow-backend.spec --noconfirm
+
+      - name: Set package version from tag
+        shell: pwsh
+        working-directory: musicflow-electron
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          npm pkg set version=$version
+
+      - name: Install Electron dependencies
+        working-directory: musicflow-electron
+        run: npm ci
+
+      - name: Build and publish installer
+        working-directory: musicflow-electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always

@@ -2,13 +2,15 @@
 
 ## Project
 Local desktop music player (YouTube download, library, lyrics, playlists).
-- `musicflow-api/` — Python Flask backend (`server.py` endpoints, `main.py` core logic, `db.py` SQLite, `app.py` pywebview entry)
+- `musicflow-api/` — Python Flask backend (`server.py` endpoints, `main.py` core logic, `db.py` SQLite, `electron_main.py` Electron-facing entry)
 - `musicflow-dash/` — React frontend (Vite + TanStack Router + Zustand + Tailwind 4)
+- `musicflow-electron/` — desktop shell (spawns the backend, opens the window) + installer packaging, see its README
 
 ## Run
 - Backend: `cd musicflow-api && py server.py` (port 5000)
 - Frontend dev: `cd musicflow-dash && npm run dev` (port 5173, proxies `/api`)
 - Build: `cd musicflow-dash && npm run build` → outputs to `musicflow-api/static/`
+- Desktop app (dev): `cd musicflow-electron && npm start` — see its README for the installer build/release flow
 - Use `py`, not `python`.
 
 ## Coding Rules

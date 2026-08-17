@@ -17,6 +17,10 @@ musicflow-dash/dist-ssr/
 .nitro/
 *.local
 
+# ── Electron (musicflow-electron) ──
+musicflow-electron/release/
+musicflow-electron/*.log
+
 # Logs
 logs
 *.log

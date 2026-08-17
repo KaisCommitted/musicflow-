@@ -10,8 +10,9 @@ musicflow/
 │   ├── server.py      ← All API endpoints
 │   ├── main.py        ← Core logic: yt-dlp downloads, lyrics fetching, metadata, playlist generation
 │   ├── db.py          ← SQLite at %APPDATA%/Musicflow/data.db
-│   ├── app.py          ← Desktop entry: pywebview + Flask in a thread
+│   ├── electron_main.py ← Backend entry for the Electron shell (no window code — Electron owns that)
 │   └── static/        ← Production React build output
+├── musicflow-electron/ ← Desktop shell: spawns the backend, opens the window, installer packaging
 ├── musicflow-dash/    ← React frontend (Vite + TanStack Router + Zustand + Tailwind 4)
 │   ├── src/routes/    ← Pages: index (library), download, lyrics, settings
 │   ├── src/store/     ← State: player.ts, library.ts, download.ts, lyricsGen.ts, view.ts, menu.ts

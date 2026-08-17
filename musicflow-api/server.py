@@ -1850,6 +1850,13 @@ def read_playlists():
     return jsonify({"playlists": playlists})
 
 
+# ── Health check — Electron polls this to know the backend is up before loading the window ──
+
+@app.route("/api/health")
+def health():
+    return jsonify({"ok": True})
+
+
 # ── Settings endpoints ──
 
 @app.route("/api/settings", methods=["GET"])

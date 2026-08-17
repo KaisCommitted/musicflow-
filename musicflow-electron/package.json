@@ -1,0 +1,57 @@
+{
+  "name": "musicflow-electron",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Musicflow desktop shell",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:backend": "cd ../musicflow-api && py -m PyInstaller musicflow-backend.spec --noconfirm",
+    "dist": "npm run build:backend && electron-builder --win",
+    "dist:publish": "npm run build:backend && electron-builder --win --publish always"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.kaislamine.musicflow",
+    "productName": "Musicflow",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../musicflow-api/dist/musicflow-backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Musicflow"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "KaisCommitted",
+        "repo": "musicflow-"
+      }
+    ]
+  }
+}

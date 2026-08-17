@@ -22,7 +22,7 @@ Run the installer → launch from Start Menu or Desktop. That's it.
 - **Generate lyrics** — scan an existing music folder and backfill lyrics for all your MP3s
 - **History & retry** — track past downloads, retry failures with one click
 - **Playlist detection** — auto-groups downloads into playlists
-- **Desktop app** — runs as a native window via pywebview, no browser needed
+- **Desktop app** — runs as a native window via Electron, no browser needed
 - **Docker support** — also runs in Docker with hot reload for development
 
 ## Screenshots
@@ -42,8 +42,10 @@ pip install -r requirements.txt
 You'll also need `ffmpeg` — place `ffmpeg.exe` in a `bin/` folder or have it on your PATH.
 
 ```bash
-python app.py
+py server.py
 ```
+
+Or as a native window instead of a browser tab — see `musicflow-electron/README.md`.
 
 ## Docker
 
@@ -70,25 +72,19 @@ Open `http://localhost:5000`. Downloads go to a Docker volume.
 | [mutagen](https://mutagen.readthedocs.io/) | MP3 ID3 tag manipulation |
 | [syncedlyrics](https://github.com/rtcq/syncedlyrics) | Multi-provider lyrics search |
 | [Flask](https://flask.palletsprojects.com/) | Web server & API |
-| [pywebview](https://pywebview.flowrl.com/) | Native desktop window |
+| [Electron](https://www.electronjs.org/) | Native desktop window |
 
 ## Building
 
-### Exe (PyInstaller)
+See `musicflow-electron/README.md` for the full desktop-app build/release flow. Short version:
 
 ```bash
-python -m PyInstaller Musicflow.spec --noconfirm
+cd musicflow-electron
+npm run dist
 ```
 
-Output: `dist/Musicflow.exe`
-
-### Installer (Inno Setup)
-
-```bash
-ISCC.exe installer.iss
-```
-
-Output: `installer_output/MusicflowSetup-1.0.0.exe`
+Freezes the backend with PyInstaller, then packages it with Electron into an NSIS installer at
+`musicflow-electron/release/Musicflow Setup <version>.exe`.
 
 ---
 

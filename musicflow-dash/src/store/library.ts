@@ -40,6 +40,10 @@ export interface Settings {
   scrobblingEnabled: boolean;
   /** Personal API token from listenbrainz.org/profile. */
   listenbrainzToken: string;
+  lastfmEnabled: boolean;
+  /** Set server-side once the browser-authorization flow completes — empty means not
+   * connected. The session key itself never round-trips to the frontend, only this. */
+  lastfmUsername: string;
 }
 
 interface LibraryState {
@@ -92,6 +96,8 @@ const defaultSettings: Settings = {
   discordEnabled: false,
   scrobblingEnabled: false,
   listenbrainzToken: "",
+  lastfmEnabled: false,
+  lastfmUsername: "",
 };
 
 function parseSettings(raw: Record<string, string>): Settings {
@@ -108,6 +114,8 @@ function parseSettings(raw: Record<string, string>): Settings {
     discordEnabled: raw["discordEnabled"] === "true",
     scrobblingEnabled: raw["scrobblingEnabled"] === "true",
     listenbrainzToken: raw["listenbrainzToken"] ?? "",
+    lastfmEnabled: raw["lastfmEnabled"] === "true",
+    lastfmUsername: raw["lastfmUsername"] ?? "",
   };
 }
 
@@ -125,6 +133,8 @@ function serializeSettings(s: Settings): Record<string, string> {
     discordEnabled: String(s.discordEnabled),
     scrobblingEnabled: String(s.scrobblingEnabled),
     listenbrainzToken: s.listenbrainzToken,
+    lastfmEnabled: String(s.lastfmEnabled),
+    lastfmUsername: s.lastfmUsername,
   };
 }
 

@@ -5,7 +5,13 @@ import { Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
-import { backupExportUrl, importBackup } from "@/lib/api";
+import {
+  backupExportUrl,
+  completeLastfmAuth,
+  disconnectLastfm,
+  importBackup,
+  startLastfmAuth,
+} from "@/lib/api";
 import {
   comboFromEvent,
   formatCombo,
@@ -271,6 +277,97 @@ function ScrobblingSection({
   );
 }
 
+/** Last.fm needs a one-time browser authorization per account (unlike ListenBrainz's plain
+ * token) — this walks through it: open the auth page, approve it there, come back and confirm. */
+function LastfmSection({
+  settings,
+  set,
+}: {
+  settings: Settings;
+  set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+}) {
+  const loadSettings = useLibrary((s) => s.loadSettings);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const connected = !!settings.lastfmUsername;
+
+  const connect = async () => {
+    setStatus(null);
+    try {
+      const { token, url } = await startLastfmAuth();
+      setPendingToken(token);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      setStatus("Couldn't start Last.fm authorization.");
+    }
+  };
+
+  const confirm = async () => {
+    if (!pendingToken) return;
+    setStatus(null);
+    try {
+      const result = await completeLastfmAuth(pendingToken);
+      setPendingToken(null);
+      await loadSettings();
+      setStatus(`Connected as ${result.username}.`);
+    } catch {
+      setStatus("Not approved yet — finish it in the browser tab first, then try again.");
+    }
+  };
+
+  const disconnect = async () => {
+    await disconnectLastfm();
+    await loadSettings();
+  };
+
+  return (
+    <>
+      <Row
+        title="Last.fm scrobbling"
+        description="Submit listens to Last.fm, same threshold as ListenBrainz above."
+      >
+        <Toggle on={settings.lastfmEnabled} onChange={(v) => set("lastfmEnabled", v)} />
+      </Row>
+      <Row
+        title="Last.fm account"
+        description={
+          connected
+            ? `Connected as ${settings.lastfmUsername}.`
+            : pendingToken
+              ? "Approve access in the browser tab that just opened, then confirm below."
+              : "One-time browser authorization — Last.fm requires this for scrobbling access."
+        }
+      >
+        <div className="flex items-center gap-2">
+          {connected ? (
+            <button
+              onClick={() => void disconnect()}
+              className="rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+            >
+              Disconnect
+            </button>
+          ) : pendingToken ? (
+            <button
+              onClick={() => void confirm()}
+              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105"
+            >
+              I've approved it
+            </button>
+          ) : (
+            <button
+              onClick={() => void connect()}
+              className="rounded-full border border-border px-4 py-2 text-xs transition-colors hover:border-primary hover:text-primary"
+            >
+              Connect Last.fm
+            </button>
+          )}
+        </div>
+      </Row>
+      {status && <p className="px-1 text-xs text-muted-foreground">{status}</p>}
+    </>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
@@ -383,6 +480,7 @@ function SettingsPage() {
       </h2>
       <div className="mt-3 max-w-3xl space-y-3">
         <ScrobblingSection settings={settings} set={set} />
+        <LastfmSection settings={settings} set={set} />
       </div>
 
       <div className="mt-8 flex max-w-3xl items-center justify-between">

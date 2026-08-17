@@ -20,6 +20,7 @@ from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_ly
 import db
 import discord_rpc
 import scrobbling
+import lastfm
 
 import yt_dlp
 
@@ -1978,6 +1979,74 @@ def scrobble_listen():
     scrobbling.submit_listen(
         token, str(data.get("title", "")), str(data.get("artist", "")),
         str(data.get("album", "")), float(data.get("duration") or 0),
+    )
+    return jsonify({"ok": True, "active": True})
+
+
+# ── Last.fm scrobbling ──
+# Needs a one-time browser authorization per Last.fm account (unlike ListenBrainz's plain
+# token) — auth-start hands the frontend a URL to open, auth-complete exchanges the token the
+# user approved there for a permanent session key, stored server-side like everything else.
+
+@app.route("/api/lastfm/auth-start", methods=["POST"])
+def lastfm_auth_start():
+    if not lastfm.configured():
+        return jsonify({"error": "Last.fm isn't configured on this build yet"}), 400
+    token = lastfm.get_auth_token()
+    if not token:
+        return jsonify({"error": "Couldn't reach Last.fm"}), 502
+    return jsonify({"token": token, "url": lastfm.auth_url(token)})
+
+
+@app.route("/api/lastfm/auth-complete", methods=["POST"])
+def lastfm_auth_complete():
+    data = request.get_json() or {}
+    token = str(data.get("token", "")).strip()
+    if not token:
+        return jsonify({"error": "Missing token"}), 400
+    session = lastfm.get_session(token)
+    if not session:
+        return jsonify({"error": "Not authorized yet — approve it in the browser tab first, then try again."}), 400
+    db.set_setting("lastfmSessionKey", session["key"])
+    db.set_setting("lastfmUsername", session.get("name", ""))
+    return jsonify({"ok": True, "username": session.get("name", "")})
+
+
+@app.route("/api/lastfm/disconnect", methods=["POST"])
+def lastfm_disconnect():
+    db.set_setting("lastfmSessionKey", "")
+    db.set_setting("lastfmUsername", "")
+    return jsonify({"ok": True})
+
+
+def _lastfm_session() -> str:
+    if db.get_setting("lastfmEnabled", "false") != "true":
+        return ""
+    return db.get_setting("lastfmSessionKey", "").strip()
+
+
+@app.route("/api/lastfm/now-playing", methods=["POST"])
+def lastfm_now_playing_route():
+    data = request.get_json() or {}
+    session_key = _lastfm_session()
+    if not session_key:
+        return jsonify({"ok": True, "active": False})
+    lastfm.update_now_playing(
+        session_key, str(data.get("artist", "")), str(data.get("title", "")),
+        str(data.get("album", "")), float(data.get("duration") or 0),
+    )
+    return jsonify({"ok": True, "active": True})
+
+
+@app.route("/api/lastfm/scrobble", methods=["POST"])
+def lastfm_scrobble_route():
+    data = request.get_json() or {}
+    session_key = _lastfm_session()
+    if not session_key:
+        return jsonify({"ok": True, "active": False})
+    lastfm.scrobble(
+        session_key, str(data.get("artist", "")), str(data.get("title", "")),
+        str(data.get("album", "")), float(data.get("duration") or 0), int(time.time()),
     )
     return jsonify({"ok": True, "active": True})
 

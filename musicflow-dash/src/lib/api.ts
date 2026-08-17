@@ -393,3 +393,32 @@ export const submitScrobble = (payload: ScrobblePayload) =>
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+/* --------------------------------- Last.fm scrobbling -------------------------------- */
+/* Unlike ListenBrainz's plain token, Last.fm needs a one-time browser authorization per
+ * account — auth-start hands back a URL to open + a token; once the user approves it there,
+ * auth-complete exchanges that token for a permanent session key (stored server-side). */
+
+export const startLastfmAuth = () =>
+  req<{ token: string; url: string }>("/api/lastfm/auth-start", { method: "POST" });
+
+export const completeLastfmAuth = (token: string) =>
+  req<{ ok: boolean; username: string }>("/api/lastfm/auth-complete", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+
+export const disconnectLastfm = () =>
+  req<{ ok: boolean }>("/api/lastfm/disconnect", { method: "POST" });
+
+export const reportLastfmNowPlaying = (payload: ScrobblePayload) =>
+  req<{ ok: boolean; active: boolean }>("/api/lastfm/now-playing", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const submitLastfmScrobble = (payload: ScrobblePayload) =>
+  req<{ ok: boolean; active: boolean }>("/api/lastfm/scrobble", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });

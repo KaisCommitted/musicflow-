@@ -1,6 +1,11 @@
 import { usePlayer } from "@/store/player";
 import { useLibrary } from "@/store/library";
-import { reportNowPlaying, submitScrobble } from "@/lib/api";
+import {
+  reportLastfmNowPlaying,
+  reportNowPlaying,
+  submitLastfmScrobble,
+  submitScrobble,
+} from "@/lib/api";
 
 // Deliberately a plain store subscription, not a React hook — playback position updates
 // several times a second, and checking "has this song crossed the scrobble threshold yet"
@@ -25,7 +30,9 @@ export function initScrobbling() {
 
   usePlayer.subscribe((state) => {
     const settings = useLibrary.getState().settings;
-    if (!settings.scrobblingEnabled || !settings.listenbrainzToken) return;
+    const lbOn = settings.scrobblingEnabled && !!settings.listenbrainzToken;
+    const lfOn = settings.lastfmEnabled;
+    if (!lbOn && !lfOn) return;
 
     const song = state.current();
     const songId = song?.id ?? null;
@@ -41,14 +48,16 @@ export function initScrobbling() {
 
     if (state.isPlaying && !nowPlayingReported) {
       nowPlayingReported = true;
-      void reportNowPlaying(payload).catch(() => undefined);
+      if (lbOn) void reportNowPlaying(payload).catch(() => undefined);
+      if (lfOn) void reportLastfmNowPlaying(payload).catch(() => undefined);
     }
 
     if (!scrobbled) {
       const threshold = scrobbleThreshold(duration);
       if (threshold != null && state.currentTime >= threshold) {
         scrobbled = true;
-        void submitScrobble(payload).catch(() => undefined);
+        if (lbOn) void submitScrobble(payload).catch(() => undefined);
+        if (lfOn) void submitLastfmScrobble(payload).catch(() => undefined);
       }
     }
   });

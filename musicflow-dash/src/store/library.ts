@@ -34,6 +34,10 @@ export interface Settings {
   fetchLyricsAutomatically: boolean;
   /** JSON-encoded Record<KeybindActionId, string>; "" means defaults. */
   keybinds: string;
+  discordEnabled: boolean;
+  /** Discord Application (client) ID — from a free app registered at
+   * discord.com/developers/applications. Required for Rich Presence to do anything. */
+  discordClientId: string;
 }
 
 interface LibraryState {
@@ -83,6 +87,8 @@ const defaultSettings: Settings = {
   gaplessPlayback: true,
   fetchLyricsAutomatically: true,
   keybinds: "",
+  discordEnabled: false,
+  discordClientId: "",
 };
 
 function parseSettings(raw: Record<string, string>): Settings {
@@ -96,6 +102,8 @@ function parseSettings(raw: Record<string, string>): Settings {
     gaplessPlayback: raw["gaplessPlayback"] !== "false",
     fetchLyricsAutomatically: raw["fetchLyricsAutomatically"] !== "false",
     keybinds: raw["keybinds"] ?? "",
+    discordEnabled: raw["discordEnabled"] === "true",
+    discordClientId: raw["discordClientId"] ?? "",
   };
 }
 
@@ -110,6 +118,8 @@ function serializeSettings(s: Settings): Record<string, string> {
     gaplessPlayback: String(s.gaplessPlayback),
     fetchLyricsAutomatically: String(s.fetchLyricsAutomatically),
     keybinds: s.keybinds,
+    discordEnabled: String(s.discordEnabled),
+    discordClientId: s.discordClientId,
   };
 }
 

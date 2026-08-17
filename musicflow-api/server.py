@@ -18,6 +18,7 @@ from mutagen.mp3 import MP3
 from PIL import Image
 from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
+import discord_rpc
 
 import yt_dlp
 
@@ -1918,6 +1919,34 @@ def import_backup():
     if warning:
         result["warning"] = warning
     return jsonify(result)
+
+
+# ── Discord Rich Presence ──
+# The frontend calls this on song-change / play-pause, not on every playback tick — Discord's
+# own countdown is computed client-side from the start/end timestamps we send it once.
+
+@app.route("/api/discord/update", methods=["POST"])
+def discord_update():
+    data = request.get_json() or {}
+    client_id = db.get_setting("discordClientId", "").strip()
+    enabled = db.get_setting("discordEnabled", "false") == "true"
+    if not enabled or not client_id:
+        return jsonify({"ok": True, "active": False})
+    discord_rpc.update(
+        client_id,
+        str(data.get("title", "")),
+        str(data.get("artist", "")),
+        bool(data.get("is_playing")),
+        float(data.get("position") or 0),
+        float(data.get("duration") or 0),
+    )
+    return jsonify({"ok": True, "active": True})
+
+
+@app.route("/api/discord/clear", methods=["POST"])
+def discord_clear():
+    discord_rpc.clear()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

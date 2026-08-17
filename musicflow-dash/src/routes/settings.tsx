@@ -27,7 +27,7 @@ function Row({
   children,
 }: {
   title: string;
-  description: string;
+  description: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -206,6 +206,51 @@ function BackupSection() {
   );
 }
 
+/** Requires a free Discord "Application" the user registers themselves — there's no way to
+ * ship a working client ID that isn't tied to somebody's own Discord developer account. */
+function DiscordSection({
+  settings,
+  set,
+}: {
+  settings: Settings;
+  set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+}) {
+  return (
+    <>
+      <Row
+        title="Discord Rich Presence"
+        description="Show the current song as your Discord status. Requires Discord running locally and a Client ID below."
+      >
+        <Toggle on={settings.discordEnabled} onChange={(v) => set("discordEnabled", v)} />
+      </Row>
+      <Row
+        title="Discord Client ID"
+        description={
+          <>
+            From a free app you register at{" "}
+            <a
+              href="https://discord.com/developers/applications"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-primary"
+            >
+              discord.com/developers/applications
+            </a>{" "}
+            — New Application, name it anything, copy the "Application ID".
+          </>
+        }
+      >
+        <input
+          value={settings.discordClientId}
+          onChange={(e) => set("discordClientId", e.target.value.trim())}
+          placeholder="1234567890123456789"
+          className="h-9 w-56 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-primary"
+        />
+      </Row>
+    </>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
@@ -304,6 +349,13 @@ function SettingsPage() {
       </h2>
       <div className="mt-3 max-w-3xl space-y-3">
         <BackupSection />
+      </div>
+
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Discord
+      </h2>
+      <div className="mt-3 max-w-3xl space-y-3">
+        <DiscordSection settings={settings} set={set} />
       </div>
 
       <div className="mt-8 flex max-w-3xl items-center justify-between">

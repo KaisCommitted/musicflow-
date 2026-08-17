@@ -7,6 +7,7 @@ import { SongContextMenu } from "@/components/SongContextMenu";
 import { FolderSetupGate } from "@/components/FolderSetupGate";
 import { useLibrary } from "@/store/library";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useDiscordPresence } from "@/hooks/useDiscordPresence";
 import { applyUiScale } from "@/lib/uiScale";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -18,6 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const settingsLoaded = useLibrary((s) => s.settingsLoaded);
   const refresh = useLibrary((s) => s.refresh);
   useKeyboardShortcuts();
+  useDiscordPresence();
 
   useEffect(() => {
     void loadSettings();

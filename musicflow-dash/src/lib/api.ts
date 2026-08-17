@@ -351,3 +351,22 @@ export const importBackup = (data: BackupData) =>
     "/api/backup/import",
     { method: "POST", body: JSON.stringify(data) },
   );
+
+/* --------------------------- Discord Rich Presence -------------------------- */
+/* No-ops server-side unless Settings has both the toggle on and a client ID — the frontend
+ * doesn't need to know either, it just reports what's playing on song-change/play-pause. */
+
+export const updateDiscordPresence = (payload: {
+  title: string;
+  artist: string;
+  is_playing: boolean;
+  position: number;
+  duration: number;
+}) =>
+  req<{ ok: boolean; active: boolean }>("/api/discord/update", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const clearDiscordPresence = () =>
+  req<{ ok: boolean }>("/api/discord/clear", { method: "POST" });

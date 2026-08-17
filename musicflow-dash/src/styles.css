@@ -118,6 +118,12 @@
     font-family: var(--font-mono);
   }
 
+  /* Smooths the UI-size change (Settings > UI size) into a gentle zoom instead of
+     an instant jump — everything sized in rem scales off this one property. */
+  html {
+    transition: font-size 200ms ease;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);

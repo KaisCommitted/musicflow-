@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
@@ -12,7 +12,7 @@ import {
   setCapturingKeybind,
   type KeybindActionId,
 } from "@/lib/keybinds";
-import { UI_SCALES } from "@/lib/uiScale";
+import { UI_SCALES, type UiScale } from "@/lib/uiScale";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
@@ -100,6 +100,48 @@ function KeybindCapture({ value, onChange }: { value: string; onChange: (combo: 
   );
 }
 
+/** Committing on every tick resizes the slider (and everything around it, since the whole
+ * app is sized in rem) mid-drag — a feedback loop that feels shaky under the cursor. So the
+ * thumb/labels move instantly off local state for a responsive feel, but the actual scale
+ * change (and the layout reflow that comes with it) only fires once you let go — mouse
+ * release, touch end, or key up — never mid-drag, however fast or slow the drag is. */
+function UiScaleSlider({ value, onChange }: { value: UiScale; onChange: (v: UiScale) => void }) {
+  const [index, setIndex] = useState(() => UI_SCALES.findIndex((s) => s.value === value));
+  const indexRef = useRef(index);
+  indexRef.current = index;
+
+  useEffect(() => {
+    setIndex(UI_SCALES.findIndex((s) => s.value === value));
+  }, [value]);
+
+  const commit = () => onChange(UI_SCALES[indexRef.current]!.value);
+
+  return (
+    <div className="w-56">
+      <input
+        type="range"
+        min={0}
+        max={UI_SCALES.length - 1}
+        step={1}
+        value={index}
+        onChange={(e) => setIndex(Number(e.target.value))}
+        onMouseUp={commit}
+        onTouchEnd={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+        className="w-full accent-[var(--color-primary)]"
+      />
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        {UI_SCALES.map((s, i) => (
+          <span key={s.value} className={cn(i === index && "font-semibold text-primary")}>
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
@@ -162,27 +204,7 @@ function SettingsPage() {
         </Row>
 
         <Row title="UI size" description="Scales text and UI elements throughout the app.">
-          <div className="w-56">
-            <input
-              type="range"
-              min={0}
-              max={UI_SCALES.length - 1}
-              step={1}
-              value={UI_SCALES.findIndex((s) => s.value === settings.uiScale)}
-              onChange={(e) => set("uiScale", UI_SCALES[Number(e.target.value)]!.value)}
-              className="w-full accent-[var(--color-primary)]"
-            />
-            <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-              {UI_SCALES.map((s) => (
-                <span
-                  key={s.value}
-                  className={cn(s.value === settings.uiScale && "font-semibold text-primary")}
-                >
-                  {s.label}
-                </span>
-              ))}
-            </div>
-          </div>
+          <UiScaleSlider value={settings.uiScale} onChange={(v) => set("uiScale", v)} />
         </Row>
 
         <Row title="Crossfade" description={`${settings.crossfade}s fade between tracks.`}>

@@ -74,10 +74,10 @@ export function Sidebar() {
     >
       <div className="flex items-center gap-3 px-4 py-5">
         <span
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-glow"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary shadow-glow"
           aria-hidden
         >
-          <Radio className="h-5 w-5" />
+          <img src="/brand/musicflow-mark-transparent.svg" alt="" className="h-6 w-6" />
         </span>
         <AnimatePresence initial={false}>
           {!collapsed && (

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 110" width="420" height="110">
+  <g transform="translate(5,5)">
+    <path d="M14 66 C 30 30, 44 82, 58 46 C 68 22, 78 34, 86 30"
+      fill="none" stroke="#FBF7F2" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+    <rect x="20" y="37" width="8" height="26" rx="4" fill="#FBF7F2"/>
+    <rect x="33" y="27" width="8" height="46" rx="4" fill="#FBF7F2"/>
+    <rect x="46" y="17" width="8" height="66" rx="4" fill="#FBF7F2"/>
+    <rect x="59" y="30" width="8" height="40" rx="4" fill="#FBF7F2"/>
+    <rect x="72" y="39" width="8" height="22" rx="4" fill="#FBF7F2"/>
+  </g>
+  <text x="124" y="70" text-anchor="start" font-family="'Cascadia Code','JetBrains Mono',ui-monospace,'SFMono-Regular',Consolas,monospace" font-size="42" font-weight="700" letter-spacing="-1.26" fill="#FBF7F2">Musicflow</text>
+</svg>

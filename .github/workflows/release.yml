@@ -65,8 +65,25 @@ jobs:
         working-directory: musicflow-electron
         run: npm ci
 
+      # electron-builder publishes several artifacts (installer, .blockmap, latest.yml) as
+      # near-simultaneous uploads. If the release doesn't exist yet, each upload independently
+      # tries to create it — that race has, in practice, created two separate draft releases
+      # for the same tag instead of one, splitting the assets between them. Pre-creating an
+      # empty draft here means every upload finds it already exists and just attaches to it.
+      - name: Pre-create the GitHub release (avoids a create-race across artifact uploads)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" --draft --title "${{ github.ref_name }}" --notes ""
+
       - name: Build and publish installer
         working-directory: musicflow-electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win --publish always
+
+      # electron-builder uploads to the release created above but leaves it in draft — publish
+      # it so it actually shows up on /releases/latest (what the README's download link uses).
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false

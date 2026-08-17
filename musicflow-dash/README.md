@@ -14,7 +14,7 @@
 
 ### Layout Structure
 
-- **Sidebar (left, persistent):** Navigation links for: Library (default home), Download, History, Settings. Below the nav, show the last 3 distinct play contexts (could be a playlist name, "All Songs", an album name, or an artist name) as quick-resume shortcuts. The sidebar should be collapsible
+- **Sidebar (left, persistent):** Navigation links for: Library (default home), Download, History, Settings. Below the nav, show the last 5 distinct play contexts (could be a playlist name, "All Songs", an album name, or an artist name) as quick-resume shortcuts. The sidebar should be collapsible
 
 - **Main content area (right):** Changes based on sidebar selection
 

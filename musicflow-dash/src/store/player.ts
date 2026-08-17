@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { Song } from "@/lib/api";
 import { localStreamUrl } from "@/lib/api";
 import { applyDynamicColor, colorFromString, dominantColorFromImage } from "@/lib/colors";
@@ -91,9 +92,10 @@ function load(song: Song, autoplay: boolean) {
   const el = getAudio();
   if (!el) return;
   // Paths starting with / are already server-relative URLs (e.g. /api/stream/...)
-  el.src = song.path.startsWith("http") || song.path.startsWith("/api/")
-    ? song.path
-    : localStreamUrl(song.path);
+  el.src =
+    song.path.startsWith("http") || song.path.startsWith("/api/")
+      ? song.path
+      : localStreamUrl(song.path);
   el.volume = usePlayer.getState().muted ? 0 : usePlayer.getState().volume;
   if (autoplay) void el.play().catch(() => undefined);
   void applyArtColor(song);
@@ -101,157 +103,166 @@ function load(song: Song, autoplay: boolean) {
 }
 
 function rememberContext(list: PlayContext[], ctx: PlayContext) {
-  return [ctx, ...list.filter((c) => c.label !== ctx.label)].slice(0, 3);
+  return [ctx, ...list.filter((c) => c.label !== ctx.label)].slice(0, 5);
 }
 
-export const usePlayer = create<PlayerState>((set, get) => ({
-  queue: [],
-  index: -1,
-  isPlaying: false,
-  shuffle: false,
-  repeat: "off",
-  volume: 0.8,
-  muted: false,
-  currentTime: 0,
-  duration: 0,
-  context: null,
-  recentContexts: [],
-  queueOpen: false,
-  fullscreen: false,
-  lyricsSynced: false,
-
-  current: () => get().queue[get().index] ?? null,
-
-  playQueue: (songs, index, context) => {
-    if (!songs.length) return;
-    const start = Math.max(0, Math.min(index, songs.length - 1));
-    set((s) => ({
-      queue: songs,
-      index: start,
-      context,
-      recentContexts: rememberContext(s.recentContexts, context),
-      isPlaying: true,
+export const usePlayer = create<PlayerState>()(
+  persist(
+    (set, get) => ({
+      queue: [],
+      index: -1,
+      isPlaying: false,
+      shuffle: false,
+      repeat: "off",
+      volume: 0.8,
+      muted: false,
       currentTime: 0,
-    }));
-    const song = songs[start];
-    if (song) load(song, true);
-  },
+      duration: 0,
+      context: null,
+      recentContexts: [],
+      queueOpen: false,
+      fullscreen: false,
+      lyricsSynced: false,
 
-  play: () => {
-    const el = getAudio();
-    if (el && get().current()) {
-      void el.play().catch(() => undefined);
-      set({ isPlaying: true });
-    }
-  },
+      current: () => get().queue[get().index] ?? null,
 
-  pause: () => {
-    getAudio()?.pause();
-    set({ isPlaying: false });
-  },
+      playQueue: (songs, index, context) => {
+        if (!songs.length) return;
+        const start = Math.max(0, Math.min(index, songs.length - 1));
+        set((s) => ({
+          queue: songs,
+          index: start,
+          context,
+          recentContexts: rememberContext(s.recentContexts, context),
+          isPlaying: true,
+          currentTime: 0,
+        }));
+        const song = songs[start];
+        if (song) load(song, true);
+      },
 
-  toggle: () => (get().isPlaying ? get().pause() : get().play()),
+      play: () => {
+        const el = getAudio();
+        if (el && get().current()) {
+          void el.play().catch(() => undefined);
+          set({ isPlaying: true });
+        }
+      },
 
-  next: (userTriggered = false) => {
-    const { queue, index, shuffle, repeat } = get();
-    if (!queue.length) return;
-    let nextIndex: number;
-    if (shuffle) {
-      nextIndex = queue.length === 1 ? 0 : Math.floor(Math.random() * queue.length);
-    } else {
-      nextIndex = index + 1;
-    }
-    if (nextIndex >= queue.length) {
-      if (repeat === "all" || userTriggered) nextIndex = 0;
-      else {
-        set({ isPlaying: false });
+      pause: () => {
         getAudio()?.pause();
-        return;
-      }
-    }
-    set({ index: nextIndex, currentTime: 0, isPlaying: true });
-    const song = queue[nextIndex];
-    if (song) load(song, true);
-  },
+        set({ isPlaying: false });
+      },
 
-  prev: () => {
-    const { queue, index, currentTime } = get();
-    const el = getAudio();
-    if (currentTime > 4 && el) {
-      el.currentTime = 0;
-      return;
-    }
-    const target = index <= 0 ? queue.length - 1 : index - 1;
-    const song = queue[target];
-    if (!song) return;
-    set({ index: target, currentTime: 0, isPlaying: true });
-    load(song, true);
-  },
+      toggle: () => (get().isPlaying ? get().pause() : get().play()),
 
-  seek: (seconds) => {
-    const el = getAudio();
-    if (el) el.currentTime = seconds;
-    set({ currentTime: seconds });
-  },
+      next: (userTriggered = false) => {
+        const { queue, index, shuffle, repeat } = get();
+        if (!queue.length) return;
+        let nextIndex: number;
+        if (shuffle) {
+          nextIndex = queue.length === 1 ? 0 : Math.floor(Math.random() * queue.length);
+        } else {
+          nextIndex = index + 1;
+        }
+        if (nextIndex >= queue.length) {
+          if (repeat === "all" || userTriggered) nextIndex = 0;
+          else {
+            set({ isPlaying: false });
+            getAudio()?.pause();
+            return;
+          }
+        }
+        set({ index: nextIndex, currentTime: 0, isPlaying: true });
+        const song = queue[nextIndex];
+        if (song) load(song, true);
+      },
 
-  setVolume: (v) => {
-    const el = getAudio();
-    if (el) el.volume = v;
-    set({ volume: v, muted: v === 0 });
-  },
+      prev: () => {
+        const { queue, index, currentTime } = get();
+        const el = getAudio();
+        if (currentTime > 4 && el) {
+          el.currentTime = 0;
+          return;
+        }
+        const target = index <= 0 ? queue.length - 1 : index - 1;
+        const song = queue[target];
+        if (!song) return;
+        set({ index: target, currentTime: 0, isPlaying: true });
+        load(song, true);
+      },
 
-  toggleMute: () => {
-    const { muted, volume } = get();
-    const el = getAudio();
-    if (el) el.volume = muted ? volume : 0;
-    set({ muted: !muted });
-  },
+      seek: (seconds) => {
+        const el = getAudio();
+        if (el) el.currentTime = seconds;
+        set({ currentTime: seconds });
+      },
 
-  toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
+      setVolume: (v) => {
+        const el = getAudio();
+        if (el) el.volume = v;
+        set({ volume: v, muted: v === 0 });
+      },
 
-  cycleRepeat: () =>
-    set((s) => ({ repeat: s.repeat === "off" ? "all" : s.repeat === "all" ? "one" : "off" })),
+      toggleMute: () => {
+        const { muted, volume } = get();
+        const el = getAudio();
+        if (el) el.volume = muted ? volume : 0;
+        set({ muted: !muted });
+      },
 
-  playNext: (song) =>
-    set((s) => {
-      const queue = [...s.queue];
-      queue.splice(s.index + 1, 0, song);
-      return { queue };
+      toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
+
+      cycleRepeat: () =>
+        set((s) => ({ repeat: s.repeat === "off" ? "all" : s.repeat === "all" ? "one" : "off" })),
+
+      playNext: (song) =>
+        set((s) => {
+          const queue = [...s.queue];
+          queue.splice(s.index + 1, 0, song);
+          return { queue };
+        }),
+
+      addToQueue: (songs) => set((s) => ({ queue: [...s.queue, ...songs] })),
+
+      removeFromQueue: (i) =>
+        set((s) => {
+          const queue = s.queue.filter((_, idx) => idx !== i);
+          const index = i < s.index ? s.index - 1 : s.index;
+          return { queue, index };
+        }),
+
+      reorderQueue: (from, to) =>
+        set((s) => {
+          const queue = [...s.queue];
+          const [moved] = queue.splice(from, 1);
+          if (!moved) return {};
+          queue.splice(to, 0, moved);
+          let index = s.index;
+          if (from === s.index) index = to;
+          else if (from < s.index && to >= s.index) index -= 1;
+          else if (from > s.index && to <= s.index) index += 1;
+          return { queue, index };
+        }),
+
+      jumpTo: (index) => {
+        const song = get().queue[index];
+        if (!song) return;
+        set({ index, currentTime: 0, isPlaying: true });
+        load(song, true);
+      },
+
+      setQueueOpen: (open) => set({ queueOpen: open }),
+      setFullscreen: (open) => set({ fullscreen: open }),
+
+      setLyricsSynced: (synced) => set({ lyricsSynced: synced }),
+
+      _tick: (time, duration) => set({ currentTime: time, duration }),
     }),
-
-  addToQueue: (songs) => set((s) => ({ queue: [...s.queue, ...songs] })),
-
-  removeFromQueue: (i) =>
-    set((s) => {
-      const queue = s.queue.filter((_, idx) => idx !== i);
-      const index = i < s.index ? s.index - 1 : s.index;
-      return { queue, index };
-    }),
-
-  reorderQueue: (from, to) =>
-    set((s) => {
-      const queue = [...s.queue];
-      const [moved] = queue.splice(from, 1);
-      if (!moved) return {};
-      queue.splice(to, 0, moved);
-      let index = s.index;
-      if (from === s.index) index = to;
-      else if (from < s.index && to >= s.index) index -= 1;
-      else if (from > s.index && to <= s.index) index += 1;
-      return { queue, index };
-    }),
-
-  jumpTo: (index) => {
-    const song = get().queue[index];
-    if (!song) return;
-    set({ index, currentTime: 0, isPlaying: true });
-    load(song, true);
-  },
-
-  setQueueOpen: (open) => set({ queueOpen: open }),
-  setFullscreen: (open) => set({ fullscreen: open }),
-
-  setLyricsSynced: (synced) => set({ lyricsSynced: synced }),
-
-  _tick: (time, duration) => set({ currentTime: time, duration }),
-}));
+    {
+      name: "musicflow-player",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({ recentContexts: state.recentContexts }),
+    },
+  ),
+);

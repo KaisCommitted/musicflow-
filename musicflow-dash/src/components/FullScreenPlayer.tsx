@@ -1,9 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ALargeSmall,
   Check,
   ChevronDown,
+  Maximize,
   Mic2,
+  Minimize,
   Pause,
   Play,
   Repeat,
@@ -47,10 +50,33 @@ export function FullScreenPlayer() {
   const active = activeLyricIndex(lines, currentTime);
   const listRef = useRef<HTMLDivElement>(null);
   const realSources = sources.filter((s) => s.method !== "demo");
+  // "normal" is the existing scrolling list; "big" shows only the current line (plus
+  // neighbours) at a much larger size. Sticky for the session, not persisted.
+  const [lyricsMode, setLyricsMode] = useState<"normal" | "big">("normal");
+  const [docFullscreen, setDocFullscreen] = useState(false);
 
   useEffect(() => {
     setLyricsSynced(synced);
   }, [synced, setLyricsSynced]);
+
+  useEffect(() => {
+    const onChange = () => setDocFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  // Exiting the immersive view (minimize, Escape, etc.) should also drop real fullscreen —
+  // otherwise the browser/OS chrome stays hidden with nothing immersive left to show for it.
+  useEffect(() => {
+    if (!fullscreen && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+  }, [fullscreen]);
+
+  const toggleDocFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else void document.documentElement.requestFullscreen().catch(() => undefined);
+  };
 
   useEffect(() => {
     const container = listRef.current;
@@ -68,7 +94,12 @@ export function FullScreenPlayer() {
   useEffect(() => {
     if (!fullscreen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFullscreen(false);
+      if (e.key === "Escape") {
+        // Real fullscreen already exits itself on Escape natively — let that happen first and
+        // only minimize the immersive view on a second press.
+        if (document.fullscreenElement) return;
+        setFullscreen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -110,7 +141,21 @@ export function FullScreenPlayer() {
               <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
                 Now Playing
               </p>
-              <span className="h-10 w-10" />
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.9, y: 2 }}
+                onClick={toggleDocFullscreen}
+                aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
+                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+              >
+                <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
+                  {docFullscreen ? (
+                    <Minimize className="h-5 w-5" />
+                  ) : (
+                    <Maximize className="h-5 w-5" />
+                  )}
+                </IconSwap>
+              </motion.button>
             </div>
 
             <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
@@ -269,6 +314,19 @@ export function FullScreenPlayer() {
                           </PopoverContent>
                         </Popover>
                       )}
+                      {synced && (
+                        <button
+                          onClick={() => setLyricsMode((m) => (m === "big" ? "normal" : "big"))}
+                          aria-label={lyricsMode === "big" ? "Normal lyrics view" : "Big lyrics view"}
+                          title="Toggle big lyrics view"
+                          className={cn(
+                            "grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-card/60 hover:text-foreground",
+                            lyricsMode === "big" && "bg-card/60 text-primary",
+                          )}
+                        >
+                          <ALargeSmall className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                     {synced && (
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -300,10 +358,43 @@ export function FullScreenPlayer() {
                 )}
                 <div
                   ref={listRef}
-                  className="min-h-0 flex-1 overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]"
+                  className={cn(
+                    "min-h-0 flex-1",
+                    synced && lyricsMode === "big"
+                      ? "flex flex-col items-center justify-center"
+                      : "overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]",
+                  )}
                 >
                   {lines.length === 0 ? (
                     <p className="text-center text-sm text-muted-foreground">No lyrics found.</p>
+                  ) : !synced ? (
+                    // No timing data — just show the text, plainly, with no highlighting or scroll-tracking.
+                    <div className="space-y-3 px-6 text-lg leading-relaxed text-foreground/80">
+                      {lines.map((line, i) => (
+                        <p key={i}>{line.text}</p>
+                      ))}
+                    </div>
+                  ) : lyricsMode === "big" ? (
+                    <div className="flex flex-col items-center gap-6 px-10 text-center">
+                      <p className="min-h-[2.5rem] text-2xl text-foreground/35">
+                        {lines[active - 1]?.text ?? ""}
+                      </p>
+                      <AnimatePresence mode="wait">
+                        <motion.p
+                          key={active}
+                          initial={{ opacity: 0, y: 14 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -14 }}
+                          transition={{ duration: 0.3 }}
+                          className="text-4xl font-bold text-primary"
+                        >
+                          {lines[active]?.text ?? ""}
+                        </motion.p>
+                      </AnimatePresence>
+                      <p className="min-h-[2.5rem] text-2xl text-foreground/35">
+                        {lines[active + 1]?.text ?? ""}
+                      </p>
+                    </div>
                   ) : (
                     <div className="space-y-5 px-6">
                       {lines.map((line, i) => (

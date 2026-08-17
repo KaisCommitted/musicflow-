@@ -394,6 +394,17 @@ export const submitScrobble = (payload: ScrobblePayload) =>
     body: JSON.stringify(payload),
   });
 
+/** Checks a token against ListenBrainz and, if valid, saves it + the resolved username
+ * server-side (same "paste and it just works" flow, now with a "Connected as X" result). */
+export const validateListenbrainzToken = (token: string) =>
+  req<{ ok: boolean; username: string }>("/api/listenbrainz/validate", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+
+export const disconnectListenbrainz = () =>
+  req<{ ok: boolean }>("/api/listenbrainz/disconnect", { method: "POST" });
+
 /* --------------------------------- Last.fm scrobbling -------------------------------- */
 /* Unlike ListenBrainz's plain token, Last.fm needs a one-time browser authorization per
  * account — auth-start hands back a URL to open + a token; once the user approves it there,

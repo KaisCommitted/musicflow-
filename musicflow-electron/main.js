@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, shell, globalShortcut, ipcMain } = require("electron");
 const path = require("path");
 const net = require("net");
 const http = require("http");
@@ -119,6 +119,49 @@ function killBackend() {
   }
 }
 
+// Translates our renderer-side combo strings (see musicflow-dash/src/lib/keybinds.ts,
+// comboFromEvent) into Electron's accelerator format — e.g. "Ctrl+ArrowLeft" ->
+// "CommandOrControl+Left". Anything not in this table (plain letters/digits) passes through
+// unchanged, since those already match accelerator key names as-is.
+const ACCELERATOR_KEY_MAP = {
+  Ctrl: "CommandOrControl",
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+};
+
+function acceleratorFromCombo(combo) {
+  return combo
+    .split("+")
+    .map((part) => ACCELERATOR_KEY_MAP[part] ?? part)
+    .join("+");
+}
+
+// Renderer decides *which* keybinds should be global (Settings > Keybinds) and pushes the list
+// down over IPC any time it changes — main.js just (re)registers whatever it's handed with the
+// OS and forwards each press back to the renderer, which already owns all the actual playback
+// logic. Re-registering from scratch each time is simpler than diffing and cheap enough here.
+function applyGlobalKeybinds(bindings) {
+  globalShortcut.unregisterAll();
+  for (const { actionId, combo } of bindings || []) {
+    if (!actionId || !combo) continue;
+    const accelerator = acceleratorFromCombo(combo);
+    try {
+      const ok = globalShortcut.register(accelerator, () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("keybinds:fire", actionId);
+        }
+      });
+      if (!ok) log(`[keybinds] OS declined "${accelerator}" — likely already claimed by another app`);
+    } catch (err) {
+      log(`[keybinds] failed to register "${accelerator}":`, err.message);
+    }
+  }
+}
+
+ipcMain.on("keybinds:set", (_event, bindings) => applyGlobalKeybinds(bindings));
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -127,12 +170,15 @@ function createWindow() {
     minHeight: 400,
     title: "Musicflow",
     icon: path.join(__dirname, "build", "icon.ico"),
-    autoHideMenuBar: true,
+    // No native title bar — the app renders its own (TitleBar.tsx) with a drag region and
+    // its own minimize/maximize/close buttons, wired up over IPC below.
+    frame: false,
     backgroundColor: "#0b0b0f",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
@@ -145,10 +191,24 @@ function createWindow() {
     return { action: "deny" };
   });
 
+  mainWindow.on("maximize", () => mainWindow.webContents.send("window:maximized-changed", true));
+  mainWindow.on("unmaximize", () => mainWindow.webContents.send("window:maximized-changed", false));
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
+
+// Frameless window (see createWindow) means the app's own TitleBar.tsx has to provide
+// minimize/maximize/close itself — these just forward those clicks to the real BrowserWindow.
+ipcMain.on("window:minimize", () => mainWindow?.minimize());
+ipcMain.on("window:toggle-maximize", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+});
+ipcMain.on("window:close", () => mainWindow?.close());
+ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -185,5 +245,8 @@ if (!gotLock) {
   });
 
   app.on("before-quit", killBackend);
-  app.on("will-quit", killBackend);
+  app.on("will-quit", () => {
+    killBackend();
+    globalShortcut.unregisterAll();
+  });
 }

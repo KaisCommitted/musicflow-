@@ -14,6 +14,7 @@ import {
   type Song,
 } from "@/lib/api";
 import { isUiScale, type UiScale } from "@/lib/uiScale";
+import type { KeybindGlobalMode } from "@/lib/keybinds";
 
 /** Result of trying to create one playlist — used by both creation modes to report
  * per-playlist success/failure (a text paste can define several at once). */
@@ -34,12 +35,18 @@ export interface Settings {
   fetchLyricsAutomatically: boolean;
   /** JSON-encoded Record<KeybindActionId, string>; "" means defaults. */
   keybinds: string;
+  /** Whether Playback keybinds also work while Musicflow isn't focused (Electron only). */
+  keybindGlobalMode: KeybindGlobalMode;
+  /** JSON-encoded KeybindActionId[] — which ones are global when keybindGlobalMode is "custom". */
+  globalKeybinds: string;
   /** Discord's Client ID is baked into the backend (discord_rpc.py) — it identifies the
    * Musicflow app to Discord, not any one Discord account, so there's nothing to configure. */
   discordEnabled: boolean;
   scrobblingEnabled: boolean;
   /** Personal API token from listenbrainz.org/profile. */
   listenbrainzToken: string;
+  /** Set server-side once the token is validated — empty means not connected. */
+  listenbrainzUsername: string;
   lastfmEnabled: boolean;
   /** Set server-side once the browser-authorization flow completes — empty means not
    * connected. The session key itself never round-trips to the frontend, only this. */
@@ -93,9 +100,12 @@ const defaultSettings: Settings = {
   gaplessPlayback: true,
   fetchLyricsAutomatically: true,
   keybinds: "",
+  keybindGlobalMode: "off",
+  globalKeybinds: "[]",
   discordEnabled: false,
   scrobblingEnabled: false,
   listenbrainzToken: "",
+  listenbrainzUsername: "",
   lastfmEnabled: false,
   lastfmUsername: "",
 };
@@ -111,9 +121,16 @@ function parseSettings(raw: Record<string, string>): Settings {
     gaplessPlayback: raw["gaplessPlayback"] !== "false",
     fetchLyricsAutomatically: raw["fetchLyricsAutomatically"] !== "false",
     keybinds: raw["keybinds"] ?? "",
+    keybindGlobalMode: (["off", "all", "custom"] as const).includes(
+      raw["keybindGlobalMode"] as KeybindGlobalMode,
+    )
+      ? (raw["keybindGlobalMode"] as KeybindGlobalMode)
+      : "off",
+    globalKeybinds: raw["globalKeybinds"] ?? "[]",
     discordEnabled: raw["discordEnabled"] === "true",
     scrobblingEnabled: raw["scrobblingEnabled"] === "true",
     listenbrainzToken: raw["listenbrainzToken"] ?? "",
+    listenbrainzUsername: raw["listenbrainzUsername"] ?? "",
     lastfmEnabled: raw["lastfmEnabled"] === "true",
     lastfmUsername: raw["lastfmUsername"] ?? "",
   };
@@ -130,9 +147,12 @@ function serializeSettings(s: Settings): Record<string, string> {
     gaplessPlayback: String(s.gaplessPlayback),
     fetchLyricsAutomatically: String(s.fetchLyricsAutomatically),
     keybinds: s.keybinds,
+    keybindGlobalMode: s.keybindGlobalMode,
+    globalKeybinds: s.globalKeybinds,
     discordEnabled: String(s.discordEnabled),
     scrobblingEnabled: String(s.scrobblingEnabled),
     listenbrainzToken: s.listenbrainzToken,
+    listenbrainzUsername: s.listenbrainzUsername,
     lastfmEnabled: String(s.lastfmEnabled),
     lastfmUsername: s.lastfmUsername,
   };

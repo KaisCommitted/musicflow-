@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Moon, RefreshCw, Sun } from "lucide-react";
+import { Globe, Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
@@ -9,16 +9,22 @@ import {
   backupExportUrl,
   completeLastfmAuth,
   disconnectLastfm,
+  disconnectListenbrainz,
   importBackup,
   startLastfmAuth,
+  validateListenbrainzToken,
 } from "@/lib/api";
 import {
+  canBeGlobal,
   comboFromEvent,
   formatCombo,
+  GLOBAL_ELIGIBLE_CATEGORY,
   KEYBIND_ACTIONS,
+  parseGlobalKeybinds,
   parseKeybinds,
   setCapturingKeybind,
   type KeybindActionId,
+  type KeybindGlobalMode,
 } from "@/lib/keybinds";
 import { UI_SCALES, type UiScale } from "@/lib/uiScale";
 import { cn } from "@/lib/utils";
@@ -103,6 +109,48 @@ function KeybindCapture({ value, onChange }: { value: string; onChange: (combo: 
       )}
     >
       {listening ? "Press a key…" : formatCombo(value)}
+    </button>
+  );
+}
+
+const GLOBAL_MODES: { value: KeybindGlobalMode; label: string }[] = [
+  { value: "off", label: "Not global" },
+  { value: "all", label: "Global" },
+  { value: "custom", label: "Custom" },
+];
+
+/** Shown next to a Playback keybind when global mode is "custom" — toggles whether that one
+ * keybind also fires while Musicflow isn't focused. Disabled for combos with no modifier key,
+ * since registering those system-wide would swallow that key in every other app. */
+function GlobalToggle({
+  combo,
+  on,
+  onChange,
+}: {
+  combo: string;
+  on: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  const eligible = canBeGlobal(combo);
+  return (
+    <button
+      onClick={() => eligible && onChange(!on)}
+      disabled={!eligible}
+      title={
+        eligible
+          ? on
+            ? "Global — works even when Musicflow isn't focused"
+            : "Make this keybind global"
+          : "Needs a modifier (Ctrl / Shift / Alt) to go global — a plain key would block typing it everywhere"
+      }
+      className={cn(
+        "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
+        !eligible && "cursor-not-allowed border-border opacity-30",
+        eligible && on && "border-primary text-primary",
+        eligible && !on && "border-border text-muted-foreground hover:border-primary/60",
+      )}
+    >
+      <Globe className="h-3.5 w-3.5" />
     </button>
   );
 }
@@ -241,6 +289,35 @@ function ScrobblingSection({
   settings: Settings;
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
 }) {
+  const loadSettings = useLibrary((s) => s.loadSettings);
+  const [draft, setDraft] = useState(settings.listenbrainzToken);
+  const [verifying, setVerifying] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const connected = !!settings.listenbrainzUsername;
+
+  const verify = async () => {
+    const token = draft.trim();
+    if (!token) return;
+    setStatus(null);
+    setVerifying(true);
+    try {
+      const result = await validateListenbrainzToken(token);
+      await loadSettings();
+      setStatus(`Connected as ${result.username}.`);
+    } catch {
+      setStatus("That token isn't valid — check listenbrainz.org/settings and try again.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const disconnect = async () => {
+    await disconnectListenbrainz();
+    setDraft("");
+    setStatus(null);
+    await loadSettings();
+  };
+
   return (
     <>
       <Row
@@ -250,29 +327,45 @@ function ScrobblingSection({
         <Toggle on={settings.scrobblingEnabled} onChange={(v) => set("scrobblingEnabled", v)} />
       </Row>
       <Row
-        title="ListenBrainz token"
+        title="ListenBrainz account"
         description={
-          <>
-            Your personal token from{" "}
-            <a
-              href="https://listenbrainz.org/settings/"
-              target="_blank"
-              rel="noreferrer"
-              className="underline hover:text-primary"
-            >
-              listenbrainz.org/settings
-            </a>
-            . Recognition depends on how clean your artist/title tags are.
-          </>
+          connected ? (
+            `Connected as ${settings.listenbrainzUsername}.`
+          ) : (
+            <>
+              Your personal token from{" "}
+              <a
+                href="https://listenbrainz.org/settings/"
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-primary"
+              >
+                listenbrainz.org/settings
+              </a>
+              . Recognition depends on how clean your artist/title tags are.
+            </>
+          )
         }
       >
-        <input
-          value={settings.listenbrainzToken}
-          onChange={(e) => set("listenbrainzToken", e.target.value.trim())}
-          placeholder="Paste your user token"
-          className="h-9 w-56 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-primary"
-        />
+        {connected ? (
+          <button
+            onClick={() => void disconnect()}
+            className="rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+          >
+            Disconnect
+          </button>
+        ) : (
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.trim())}
+            onBlur={() => void verify()}
+            placeholder={verifying ? "Verifying…" : "Paste your user token"}
+            disabled={verifying}
+            className="h-9 w-56 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-primary disabled:opacity-60"
+          />
+        )}
       </Row>
+      {status && <p className="px-1 text-xs text-muted-foreground">{status}</p>}
     </>
   );
 }
@@ -386,6 +479,14 @@ function SettingsPage() {
   };
   const resetKeybinds = () => set("keybinds", "");
 
+  const globalSet = parseGlobalKeybinds(settings.globalKeybinds);
+  const toggleGlobal = (actionId: KeybindActionId, on: boolean) => {
+    const next = new Set(globalSet);
+    if (on) next.add(actionId);
+    else next.delete(actionId);
+    set("globalKeybinds", JSON.stringify([...next]));
+  };
+
   return (
     <div className="h-full overflow-y-auto px-8 py-8">
       <h1 className="text-2xl font-bold">Settings</h1>
@@ -495,12 +596,43 @@ function SettingsPage() {
         </button>
       </div>
       <div className="mt-3 max-w-3xl space-y-3">
+        <Row
+          title="Global keybinds"
+          description="Let Playback keybinds work even while Musicflow isn't the focused window. Only combos with a modifier (Ctrl / Shift / Alt) are eligible — plain keys stay in-app only, so they don't block typing that key everywhere else."
+        >
+          <div className="flex gap-2">
+            {GLOBAL_MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => set("keybindGlobalMode", m.value)}
+                className={cn(
+                  "rounded-full border border-border px-4 py-2 text-xs transition-colors",
+                  settings.keybindGlobalMode === m.value
+                    ? "border-primary text-primary"
+                    : "text-muted-foreground",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </Row>
+
         {(["Playback", "Lyrics"] as const).map((category) => (
           <div key={category} className="space-y-3">
             <p className="text-xs font-medium text-muted-foreground">{category}</p>
             {KEYBIND_ACTIONS.filter((a) => a.category === category).map((a) => (
               <Row key={a.id} title={a.label} description={a.description}>
-                <KeybindCapture value={keybinds[a.id]} onChange={(combo) => rebind(a.id, combo)} />
+                <div className="flex items-center gap-2">
+                  <KeybindCapture value={keybinds[a.id]} onChange={(combo) => rebind(a.id, combo)} />
+                  {settings.keybindGlobalMode === "custom" && category === GLOBAL_ELIGIBLE_CATEGORY && (
+                    <GlobalToggle
+                      combo={keybinds[a.id]}
+                      on={globalSet.has(a.id)}
+                      onChange={(v) => toggleGlobal(a.id, v)}
+                    />
+                  )}
+                </div>
               </Row>
             ))}
           </div>

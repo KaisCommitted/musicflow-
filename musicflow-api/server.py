@@ -1994,6 +1994,27 @@ def scrobble_listen():
     return jsonify({"ok": True, "active": True})
 
 
+@app.route("/api/listenbrainz/validate", methods=["POST"])
+def listenbrainz_validate():
+    data = request.get_json() or {}
+    token = str(data.get("token", "")).strip()
+    if not token:
+        return jsonify({"error": "Missing token"}), 400
+    result = scrobbling.validate_token(token)
+    if not result:
+        return jsonify({"error": "Invalid token"}), 400
+    db.set_setting("listenbrainzToken", token)
+    db.set_setting("listenbrainzUsername", result["username"])
+    return jsonify({"ok": True, "username": result["username"]})
+
+
+@app.route("/api/listenbrainz/disconnect", methods=["POST"])
+def listenbrainz_disconnect():
+    db.set_setting("listenbrainzToken", "")
+    db.set_setting("listenbrainzUsername", "")
+    return jsonify({"ok": True})
+
+
 # ── Last.fm scrobbling ──
 # Needs a one-time browser authorization per Last.fm account (unlike ListenBrainz's plain
 # token) — auth-start hands the frontend a URL to open, auth-complete exchanges the token the

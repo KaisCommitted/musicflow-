@@ -14,6 +14,25 @@ import urllib.request
 log = logging.getLogger("musicflow")
 
 SUBMIT_URL = "https://api.listenbrainz.org/1/submit-listens"
+VALIDATE_URL = "https://api.listenbrainz.org/1/validate-token"
+
+
+def validate_token(token: str) -> dict | None:
+    """Checks a token against ListenBrainz and resolves the username it belongs to — used to
+    show a "Connected as X" state in Settings instead of just accepting whatever was pasted."""
+    req = urllib.request.Request(
+        VALIDATE_URL,
+        headers={"Authorization": f"Token {token}", "User-Agent": "Musicflow/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read())
+    except Exception as e:
+        log.info("[listenbrainz] validate failed: %s", e)
+        return None
+    if not data.get("valid"):
+        return None
+    return {"username": data.get("user_name", "")}
 
 
 def _track_metadata(title: str, artist: str, album: str, duration: float) -> dict:

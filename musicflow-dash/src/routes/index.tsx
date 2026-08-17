@@ -160,7 +160,12 @@ function LibraryPage() {
 
               {loading && <p className="text-sm text-muted-foreground">Scanning library…</p>}
 
-              <AnimatePresence mode="wait">
+              {/* popLayout, not wait: "wait" fully removes the old tab before mounting the
+                  new one, which — with hundreds of songs/albums/artists — is slow enough
+                  to read as a blank flicker. popLayout takes the exiting tab out of layout
+                  flow so the new one renders immediately underneath while the old one
+                  fades out on top, with no gap and no layout jump. */}
+              <AnimatePresence mode="popLayout">
                 <motion.div
                   key={tab}
                   initial={{ opacity: 0, y: 8 }}

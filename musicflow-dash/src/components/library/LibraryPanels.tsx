@@ -7,6 +7,7 @@ import { ArtistArt } from "@/components/ArtistArt";
 import { PlaylistArt } from "@/components/PlaylistArt";
 import { SongTable } from "@/components/SongTable";
 import { CreatePlaylistDialog } from "@/components/library/CreatePlaylistDialog";
+import { VirtualGrid } from "@/components/library/VirtualGrid";
 import { useLibrary } from "@/store/library";
 import { usePlayer } from "@/store/player";
 import { useView } from "@/store/view";
@@ -83,13 +84,14 @@ export function AlbumsView({ songs }: { songs: Song[] }) {
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5">
-      {albums.map(([name, tracks], i) => (
+    <VirtualGrid
+      items={albums}
+      minColWidth={180}
+      gap={20}
+      rowHeight={260}
+      renderItem={([name, tracks]) => (
         <motion.button
           key={name}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: Math.min(i * 0.02, 0.3) }}
           whileTap={{ scale: 0.97 }}
           onClick={() => openAlbum(name)}
           className="surface group overflow-hidden p-3 text-left transition-all hover:-translate-y-1 hover:shadow-elevated"
@@ -102,8 +104,8 @@ export function AlbumsView({ songs }: { songs: Song[] }) {
           <p className="truncate text-sm font-semibold">{name}</p>
           <p className="truncate text-xs text-muted-foreground">{tracks[0]?.artist}</p>
         </motion.button>
-      ))}
-    </div>
+      )}
+    />
   );
 }
 
@@ -166,13 +168,14 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-5">
-      {artists.map(([name, tracks], i) => (
+    <VirtualGrid
+      items={artists}
+      minColWidth={160}
+      gap={20}
+      rowHeight={220}
+      renderItem={([name, tracks]) => (
         <motion.button
           key={name}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: Math.min(i * 0.02, 0.3) }}
           whileTap={{ scale: 0.97 }}
           onClick={() => openArtist(name)}
           className="surface flex flex-col items-center gap-3 p-5 transition-all hover:-translate-y-1 hover:shadow-elevated"
@@ -186,8 +189,8 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
           <span className="w-full truncate text-center text-sm font-semibold">{name}</span>
           <span className="text-xs text-muted-foreground">{tracks.length} tracks</span>
         </motion.button>
-      ))}
-    </div>
+      )}
+    />
   );
 }
 

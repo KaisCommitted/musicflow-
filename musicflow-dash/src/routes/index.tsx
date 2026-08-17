@@ -1,9 +1,9 @@
 import { useMemo, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { Disc3, ListMusic, Music4, Play, Search, Shuffle, User } from "lucide-react";
+import { Disc3, ListMusic, Music4, Play, Search, Shuffle, Tag, User } from "lucide-react";
 import { SongTable } from "@/components/SongTable";
-import { AlbumsView, ArtistsView, PlaylistsView } from "@/components/library/LibraryPanels";
+import { AlbumsView, ArtistsView, GenresView, PlaylistsView } from "@/components/library/LibraryPanels";
 import { useLibrary } from "@/store/library";
 import { usePlayer } from "@/store/player";
 import { useView, type LibraryTab } from "@/store/view";
@@ -19,12 +19,13 @@ const TABS: Array<{ key: LibraryTab; label: string; icon: typeof Music4 }> = [
   { key: "songs", label: "All Songs", icon: Music4 },
   { key: "albums", label: "Albums", icon: Disc3 },
   { key: "artists", label: "Artists", icon: User },
+  { key: "genres", label: "Genres", icon: Tag },
   { key: "playlists", label: "Playlists", icon: ListMusic },
 ];
 
 function LibraryPage() {
   const { songs, playlists, loading, search, setSearch } = useLibrary();
-  const { tab, setTab, openAlbum, openArtist, openPlaylist } = useView();
+  const { tab, setTab, openAlbum, openArtist, openGenre, openPlaylist } = useView();
   const playQueue = usePlayer((s) => s.playQueue);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +48,11 @@ function LibraryPage() {
       ].slice(0, 30),
       artists: [
         ...new Set(songs.filter((s) => s.artist.toLowerCase().includes(q)).map((s) => s.artist)),
+      ].slice(0, 30),
+      genres: [
+        ...new Set(
+          songs.filter((s) => s.genre.toLowerCase().includes(q)).map((s) => s.genre || "Unknown"),
+        ),
       ].slice(0, 30),
       playlists: playlists
         .filter((p) => p.name.toLowerCase().includes(q))
@@ -97,7 +103,7 @@ function LibraryPage() {
                   context={{ label: `Search: ${search}`, kind: "search" }}
                 />
               </section>
-              {(["albums", "artists", "playlists"] as const).map((group) => {
+              {(["albums", "artists", "genres", "playlists"] as const).map((group) => {
                 const items = results[group];
                 if (!items.length) return null;
                 return (
@@ -113,6 +119,7 @@ function LibraryPage() {
                             setSearch("");
                             if (group === "albums") openAlbum(name);
                             else if (group === "artists") openArtist(name);
+                            else if (group === "genres") openGenre(name);
                             else openPlaylist(name);
                           }}
                           className="surface flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:border-primary"
@@ -184,6 +191,7 @@ function LibraryPage() {
                   )}
                   {tab === "albums" && <AlbumsView songs={songs} />}
                   {tab === "artists" && <ArtistsView songs={songs} />}
+                  {tab === "genres" && <GenresView songs={songs} />}
                   {tab === "playlists" && <PlaylistsView songs={songs} />}
                 </motion.div>
               </AnimatePresence>

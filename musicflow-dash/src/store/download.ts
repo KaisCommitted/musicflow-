@@ -159,6 +159,7 @@ export const useDownload = create<DownloadState>()(
             album: "Downloads",
             duration: 0,
             artwork: jobArtworkUrl(jobId, i.index),
+            genre: "",
           }));
       },
     }),

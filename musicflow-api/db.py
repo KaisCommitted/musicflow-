@@ -91,7 +91,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album);
         CREATE INDEX IF NOT EXISTS idx_playlist_songs_path ON playlist_songs(song_path);
     """)
+    # Added after the initial release — CREATE TABLE IF NOT EXISTS above won't add a column
+    # to a songs table that already exists from before, so it needs its own migration step.
+    _ensure_column(conn, "songs", "genre", "TEXT NOT NULL DEFAULT ''")
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str):
+    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
 
 # ── Settings ──
@@ -117,13 +126,13 @@ def get_all_settings() -> dict:
 
 def upsert_song(path: str, title: str, artist: str, album: str, duration: float,
                 track: int | None, year: int | None, has_artwork: bool, has_lyrics: bool,
-                file_size: int, last_modified: float):
+                file_size: int, last_modified: float, genre: str = ""):
     get_conn().execute("""
         INSERT OR REPLACE INTO songs (path, title, artist, album, duration, track, year,
-                                      has_artwork, has_lyrics, file_size, last_modified)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      has_artwork, has_lyrics, file_size, last_modified, genre)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (path, title, artist, album, duration, track, year,
-          int(has_artwork), int(has_lyrics), file_size, last_modified))
+          int(has_artwork), int(has_lyrics), file_size, last_modified, genre))
     get_conn().commit()
 
 

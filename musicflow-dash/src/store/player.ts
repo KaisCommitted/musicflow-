@@ -8,7 +8,7 @@ export type RepeatMode = "off" | "all" | "one";
 export interface PlayContext {
   label: string;
   /** where the context came from, used for the sidebar quick-resume shortcuts */
-  kind: "all" | "album" | "artist" | "playlist" | "search" | "download";
+  kind: "all" | "album" | "artist" | "genre" | "playlist" | "search" | "download";
 }
 
 interface PlayerState {

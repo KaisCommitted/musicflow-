@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Disc3, Play, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Disc3, Play, Plus, Tag, Trash2 } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
 import { ArtistArt } from "@/components/ArtistArt";
@@ -11,7 +11,10 @@ import { VirtualGrid } from "@/components/library/VirtualGrid";
 import { useLibrary } from "@/store/library";
 import { usePlayer } from "@/store/player";
 import { useView } from "@/store/view";
+import { gradientFromString } from "@/lib/colors";
 import { cn } from "@/lib/utils";
+
+const UNKNOWN_GENRE = "Unknown";
 
 export function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -191,6 +194,83 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
           />
           <span className="w-full truncate text-center text-sm font-semibold">{name}</span>
           <span className="text-xs text-muted-foreground">{tracks.length} tracks</span>
+        </motion.button>
+      )}
+    />
+  );
+}
+
+/* --------------------------------- Genres --------------------------------- */
+
+export function GenresView({ songs }: { songs: Song[] }) {
+  const { genre, openGenre, back } = useView();
+  const playQueue = usePlayer((s) => s.playQueue);
+
+  const genres = useMemo(() => {
+    const map = new Map<string, Song[]>();
+    for (const s of songs) {
+      const key = s.genre.trim() || UNKNOWN_GENRE;
+      const list = map.get(key) ?? [];
+      list.push(s);
+      map.set(key, list);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [songs]);
+
+  if (genre) {
+    const tracks =
+      genre === UNKNOWN_GENRE
+        ? songs.filter((s) => !s.genre.trim())
+        : songs.filter((s) => s.genre === genre);
+    return (
+      <div>
+        <BackButton label="All genres" onClick={back} />
+        <div className="mb-6 flex items-center gap-6">
+          <div
+            className="grid h-32 w-32 shrink-0 place-items-center rounded-2xl text-primary-foreground shadow-elevated"
+            style={{ backgroundImage: gradientFromString(genre) }}
+          >
+            <Tag className="h-10 w-10" />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Genre</p>
+            <h2 className="mt-1 text-3xl font-bold">{genre}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{tracks.length} tracks</p>
+            <div className="mt-4">
+              <PlayBigButton
+                onClick={() => playQueue(tracks, 0, { label: genre, kind: "genre" })}
+              />
+            </div>
+          </div>
+        </div>
+        <SongTable songs={tracks} context={{ label: genre, kind: "genre" }} />
+      </div>
+    );
+  }
+
+  return (
+    <VirtualGrid
+      items={genres}
+      minColWidth={160}
+      gap={20}
+      rowHeight={140}
+      renderItem={([name, tracks]) => (
+        <motion.button
+          key={name}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => openGenre(name)}
+          className="surface group flex items-center gap-3 p-4 text-left transition-all hover:-translate-y-1 hover:shadow-elevated"
+        >
+          <div
+            className="grid h-14 w-14 shrink-0 place-items-center rounded-xl text-primary-foreground"
+            style={{ backgroundImage: gradientFromString(name) }}
+          >
+            <Tag className="h-6 w-6" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{name}</p>
+            <p className="text-xs text-muted-foreground">{tracks.length} tracks</p>
+          </div>
         </motion.button>
       )}
     />

@@ -1198,6 +1198,7 @@ def _scan_songs(folder: str) -> list[dict]:
                 "id": filepath, "path": filepath,
                 "title": c["title"], "artist": c["artist"], "album": c["album"],
                 "duration": c["duration"], "size": file_size, "has_lyrics": bool(c["has_lyrics"]),
+                "genre": c.get("genre", ""),
             }
             if c.get("track"):
                 song["track"] = c["track"]
@@ -1209,11 +1210,12 @@ def _scan_songs(folder: str) -> list[dict]:
             continue
 
         # Read ID3 tags for new/modified files
-        song = {"id": filepath, "path": filepath, "title": "", "artist": "", "album": "", "duration": 0, "size": file_size}
+        song = {"id": filepath, "path": filepath, "title": "", "artist": "", "album": "", "duration": 0, "size": file_size, "genre": ""}
         has_artwork = False
         has_lyrics = False
         track = None
         year = None
+        genre = ""
         try:
             audio = MP3(filepath)
             song["duration"] = round(audio.info.length)
@@ -1222,6 +1224,8 @@ def _scan_songs(folder: str) -> list[dict]:
                 song["title"] = str(tags.get("TIT2", "")) or ""
                 song["artist"] = str(tags.get("TPE1", "")) or ""
                 song["album"] = str(tags.get("TALB", "")) or ""
+                genre = str(tags.get("TCON", "")) or ""
+                song["genre"] = genre
                 trck = tags.get("TRCK")
                 if trck:
                     try:
@@ -1256,7 +1260,7 @@ def _scan_songs(folder: str) -> list[dict]:
         # Cache in db
         db.upsert_song(filepath, song["title"], song["artist"], song.get("album", ""),
                        song["duration"], track, year, has_artwork, has_lyrics,
-                       file_size, last_modified)
+                       file_size, last_modified, genre)
         songs.append(song)
 
     # Remove stale entries for deleted files

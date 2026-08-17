@@ -83,6 +83,8 @@ export interface Song {
   track?: number;
   year?: number;
   artwork?: string | null;
+  /** ID3 genre tag — "" when untagged. */
+  genre: string;
 }
 
 export interface Playlist {

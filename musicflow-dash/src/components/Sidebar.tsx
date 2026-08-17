@@ -11,6 +11,7 @@ import {
   MicVocal,
   Radio,
   Settings,
+  Tag,
   User,
 } from "lucide-react";
 import { useState } from "react";
@@ -29,6 +30,7 @@ const NAV = [
 function contextIcon(kind: PlayContext["kind"]) {
   if (kind === "album") return Disc3;
   if (kind === "artist") return User;
+  if (kind === "genre") return Tag;
   if (kind === "playlist") return ListMusic;
   return Radio;
 }
@@ -40,7 +42,7 @@ export function Sidebar() {
   const playQueue = usePlayer((s) => s.playQueue);
   const songs = useLibrary((s) => s.songs);
   const playlists = useLibrary((s) => s.playlists);
-  const { openAlbum, openArtist, openPlaylist, setTab } = useView();
+  const { openAlbum, openArtist, openGenre, openPlaylist, setTab } = useView();
 
   const resume = (ctx: PlayContext) => {
     let list = songs;
@@ -50,6 +52,9 @@ export function Sidebar() {
     } else if (ctx.kind === "artist") {
       list = songs.filter((s) => s.artist === ctx.label);
       openArtist(ctx.label);
+    } else if (ctx.kind === "genre") {
+      list = songs.filter((s) => (s.genre.trim() || "Unknown") === ctx.label);
+      openGenre(ctx.label);
     } else if (ctx.kind === "playlist") {
       const p = playlists.find((x) => x.name === ctx.label);
       list = p ? songs.filter((s) => p.songs.includes(s.path)) : songs;

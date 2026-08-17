@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("dark", theme !== "light");
+    root.classList.toggle("light", theme === "light");
   }, [theme]);
 
   if (!settingsLoaded) {

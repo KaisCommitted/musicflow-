@@ -95,6 +95,20 @@ def init_db():
     # to a songs table that already exists from before, so it needs its own migration step.
     _ensure_column(conn, "songs", "genre", "TEXT NOT NULL DEFAULT ''")
     conn.commit()
+    _backfill_genre_once(conn)
+
+
+def _backfill_genre_once(conn: sqlite3.Connection):
+    """One-time fix for libraries scanned before the genre column existed: those cached rows
+    all have genre='' regardless of what's actually in the file, and _scan_songs' file-size +
+    last-modified cache check would otherwise trust that forever — the tags never get re-read.
+    Invalidating last_modified for them forces exactly one full re-read on the next scan, which
+    picks genre up correctly (and is a no-op after that, tracked so it only ever runs once)."""
+    if get_setting("genreBackfillDone", "") == "true":
+        return
+    conn.execute("UPDATE songs SET last_modified = 0 WHERE genre = ''")
+    conn.commit()
+    set_setting("genreBackfillDone", "true")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str):

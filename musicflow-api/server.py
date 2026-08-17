@@ -1227,7 +1227,11 @@ def _scan_songs(folder: str) -> list[dict]:
                 song["title"] = str(tags.get("TIT2", "")) or ""
                 song["artist"] = str(tags.get("TPE1", "")) or ""
                 song["album"] = str(tags.get("TALB", "")) or ""
-                genre = str(tags.get("TCON", "")) or ""
+                # Plain str(tag) doesn't resolve legacy ID3v1 numeric genre codes like "(17)"
+                # into their names ("Rock") — .genres does exactly what Explorer's Properties
+                # panel does, handling both plain-text and numeric-coded tags.
+                tcon = tags.get("TCON")
+                genre = ", ".join(tcon.genres) if tcon and tcon.genres else ""
                 song["genre"] = genre
                 trck = tags.get("TRCK")
                 if trck:

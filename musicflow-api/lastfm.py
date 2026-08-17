@@ -25,8 +25,8 @@ log = logging.getLogger("musicflow")
 # Client ID); API_SECRET signs requests and is meant to stay out of a public repo in principle,
 # but for a locally-run desktop app there's no server boundary to protect it behind — same
 # trust model most open-source Last.fm scrobbler clients already ship under.
-API_KEY = ""
-API_SECRET = ""
+API_KEY = "308b9fee0be28704818a98ddb1c8c95f"
+API_SECRET = "012472fd734a66bdb2ed32278d20c585"
 
 API_ROOT = "https://ws.audioscrobbler.com/2.0/"
 AUTH_ROOT = "https://www.last.fm/api/auth/"

@@ -1,6 +1,6 @@
 {
   "name": "musicflow-electron",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Musicflow desktop shell",
   "main": "main.js",
@@ -27,7 +27,9 @@
       {
         "from": "../musicflow-api/dist/musicflow-backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {
@@ -35,7 +37,9 @@
       "buildResources": "build"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {

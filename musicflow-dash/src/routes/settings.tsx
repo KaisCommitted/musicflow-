@@ -5,6 +5,7 @@ import { Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
+import { backupExportUrl, importBackup } from "@/lib/api";
 import {
   comboFromEvent,
   formatCombo,
@@ -142,6 +143,69 @@ function UiScaleSlider({ value, onChange }: { value: UiScale; onChange: (v: UiSc
   );
 }
 
+/** Exports/imports playlists + settings (never the audio files) as one JSON file. */
+function BackupSection() {
+  const refresh = useLibrary((s) => s.refresh);
+  const loadSettings = useLibrary((s) => s.loadSettings);
+  const [status, setStatus] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onImportFile = async (file: File) => {
+    setStatus(null);
+    try {
+      const data = JSON.parse(await file.text());
+      const result = await importBackup(data);
+      await Promise.all([loadSettings(), refresh()]);
+      setStatus(
+        result.warning ??
+          `Imported ${result.imported_settings} settings and ${result.imported_playlists} playlists.`,
+      );
+    } catch {
+      setStatus("Import failed — not a valid Musicflow backup file.");
+    }
+  };
+
+  return (
+    <>
+      <Row
+        title="Export backup"
+        description="Download your playlists and settings as a JSON file."
+      >
+        <a
+          href={backupExportUrl()}
+          download
+          className="rounded-full border border-border px-4 py-2 text-xs transition-colors hover:border-primary hover:text-primary"
+        >
+          Export
+        </a>
+      </Row>
+      <Row
+        title="Import backup"
+        description="Restore playlists and settings from a backup file. Your music folder stays as-is."
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void onImportFile(file);
+            e.target.value = "";
+          }}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="rounded-full border border-border px-4 py-2 text-xs transition-colors hover:border-primary hover:text-primary"
+        >
+          Import…
+        </button>
+      </Row>
+      {status && <p className="px-1 text-xs text-muted-foreground">{status}</p>}
+    </>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
@@ -233,6 +297,13 @@ function SettingsPage() {
             onChange={(v) => set("fetchLyricsAutomatically", v)}
           />
         </Row>
+      </div>
+
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Backup
+      </h2>
+      <div className="mt-3 max-w-3xl space-y-3">
+        <BackupSection />
       </div>
 
       <div className="mt-8 flex max-w-3xl items-center justify-between">

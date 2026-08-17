@@ -1063,6 +1063,18 @@ def _process_lyrics_job(job_id: str):
     _allow_sleep()
 
 
+def _write_playlist_m3u8(folder: str, name: str, songs: list[str]) -> str:
+    """Sanitizes `name` and (re)writes that .m3u8 with this exact song list. Returns the
+    sanitized name actually used, shared by the playlist/update route and backup import."""
+    safe_name = re.sub(r'[<>:"/\\|?*]', '', name).strip()
+    pl_path = os.path.join(folder, f"{safe_name}.m3u8")
+    with open(pl_path, "w", encoding="utf-8") as f:
+        f.write("#EXTM3U\n")
+        for song_path in songs:
+            f.write(f"{os.path.basename(song_path)}\n")
+    return safe_name
+
+
 def _read_playlist_songs(folder: str, pl_path: str) -> list[str]:
     """Reads a .m3u8's song entries, resolving each into a full path against `folder`.
     Playlists are written with bare filenames (the portable form: copy the whole music
@@ -1785,13 +1797,8 @@ def update_playlist():
     if not folder or not os.path.isdir(folder) or not name:
         return jsonify({"error": "Invalid folder or name"}), 400
 
-    safe_name = re.sub(r'[<>:"/\\|?*]', '', name).strip()
+    safe_name = _write_playlist_m3u8(folder, name, songs)
     pl_path = os.path.join(folder, f"{safe_name}.m3u8")
-
-    with open(pl_path, "w", encoding="utf-8") as f:
-        f.write("#EXTM3U\n")
-        for song_path in songs:
-            f.write(f"{os.path.basename(song_path)}\n")
 
     return jsonify({"playlist": {"name": safe_name, "path": pl_path, "songs": songs}})
 
@@ -1845,6 +1852,68 @@ def update_settings():
     for key, value in data.items():
         db.set_setting(key, str(value))
     return jsonify(db.get_all_settings())
+
+
+# ── Backup / export ──
+# Playlists (.m3u8) + settings only — never the audio files themselves, so the backup stays
+# a small, portable JSON instead of duplicating the whole library.
+
+@app.route("/api/backup/export", methods=["GET"])
+def export_backup():
+    folder = music_folder()
+    playlists = []
+    if folder and os.path.isdir(folder):
+        for f in sorted(os.listdir(folder)):
+            if not f.lower().endswith(".m3u8"):
+                continue
+            pl_path = os.path.join(folder, f)
+            playlists.append({
+                "name": os.path.splitext(f)[0],
+                "songs": _read_playlist_songs(folder, pl_path),
+            })
+
+    payload = {
+        "version": 1,
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "settings": db.get_all_settings(),
+        "playlists": playlists,
+    }
+    resp = Response(json.dumps(payload, indent=2), mimetype="application/json")
+    resp.headers["Content-Disposition"] = 'attachment; filename="musicflow-backup.json"'
+    return resp
+
+
+@app.route("/api/backup/import", methods=["POST"])
+def import_backup():
+    data = request.get_json() or {}
+    folder = music_folder()
+    imported_settings = 0
+    imported_playlists = 0
+    warning = None
+
+    for key, value in (data.get("settings") or {}).items():
+        # This machine's own music folder is set locally — importing a backup taken
+        # elsewhere shouldn't repoint it at a path that may not exist here.
+        if key == "musicFolder":
+            continue
+        db.set_setting(key, str(value))
+        imported_settings += 1
+
+    playlists = data.get("playlists") or []
+    if playlists and not (folder and os.path.isdir(folder)):
+        warning = "No music folder configured — playlists were not restored."
+    elif folder:
+        for pl in playlists:
+            name = str(pl.get("name", "")).strip()
+            if not name:
+                continue
+            _write_playlist_m3u8(folder, name, pl.get("songs") or [])
+            imported_playlists += 1
+
+    result = {"ok": True, "imported_settings": imported_settings, "imported_playlists": imported_playlists}
+    if warning:
+        result["warning"] = warning
+    return jsonify(result)
 
 
 if __name__ == "__main__":

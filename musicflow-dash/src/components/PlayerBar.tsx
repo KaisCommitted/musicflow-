@@ -18,6 +18,7 @@ import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { AlbumArt } from "@/components/AlbumArt";
 import { LikeButton } from "@/components/LikeButton";
+import { SleepTimer } from "@/components/SleepTimer";
 import { usePlayer } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -152,6 +153,7 @@ export function PlayerBar() {
         <IconButton active={queueOpen} onClick={() => setQueueOpen(!queueOpen)} aria-label="Queue">
           <ListMusic className="h-4 w-4" />
         </IconButton>
+        <SleepTimer />
         <IconButton onClick={toggleMute} aria-label="Mute">
           <IconSwap id={muted || volume === 0 ? "off" : volume < 0.5 ? "low" : "high"}>
             {muted || volume === 0 ? (

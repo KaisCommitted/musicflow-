@@ -328,3 +328,24 @@ export const deleteSong = (folder: string, path: string) =>
     "/api/song/delete",
     { method: "POST", body: JSON.stringify({ folder, path }) },
   );
+
+/* ---------------------------------- backup --------------------------------- */
+
+/** GET — a plain link/download href, not a fetch() call (it returns a file attachment). */
+export const backupExportUrl = () => "/api/backup/export";
+
+export interface BackupData {
+  version?: number;
+  exported_at?: string;
+  settings?: Record<string, string>;
+  playlists?: { name: string; songs: string[] }[];
+}
+
+/** Settings' `musicFolder` is deliberately ignored server-side — this machine's own folder
+ * stays as configured rather than getting repointed at a path from wherever the backup was
+ * taken. */
+export const importBackup = (data: BackupData) =>
+  req<{ ok: boolean; imported_settings: number; imported_playlists: number; warning?: string }>(
+    "/api/backup/import",
+    { method: "POST", body: JSON.stringify(data) },
+  );

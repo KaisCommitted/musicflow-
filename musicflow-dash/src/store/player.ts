@@ -29,6 +29,10 @@ interface PlayerState {
    * mirrored here (not just local to FullScreenPlayer) so the global keyboard shortcut handler
    * knows whether Up/Down should do anything. */
   lyricsSynced: boolean;
+  /** epoch ms the sleep timer will pause playback at, or null if off. */
+  sleepTimerEndAt: number | null;
+  /** Pause when the current track finishes, instead of on a fixed timer. */
+  sleepAtTrackEnd: boolean;
 
   current: () => Song | null;
   playQueue: (songs: Song[], index: number, context: PlayContext) => void;
@@ -50,6 +54,9 @@ interface PlayerState {
   setQueueOpen: (open: boolean) => void;
   setFullscreen: (open: boolean) => void;
   setLyricsSynced: (synced: boolean) => void;
+  /** Pauses in `minutes` minutes; pass null to cancel. Overrides sleepAtTrackEnd. */
+  setSleepTimer: (minutes: number | null) => void;
+  setSleepAtTrackEnd: (v: boolean) => void;
   _tick: (time: number, duration: number) => void;
 }
 
@@ -74,6 +81,7 @@ const dedupingLocalStorage: StateStorage = {
 };
 
 let audio: HTMLAudioElement | null = null;
+let sleepTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 function getAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
@@ -88,6 +96,11 @@ function getAudio(): HTMLAudioElement | null {
     });
     audio.addEventListener("ended", () => {
       const s = usePlayer.getState();
+      if (s.sleepAtTrackEnd) {
+        audio!.pause();
+        usePlayer.setState({ sleepAtTrackEnd: false, isPlaying: false });
+        return;
+      }
       if (s.repeat === "one") {
         audio!.currentTime = 0;
         void audio!.play();
@@ -146,6 +159,8 @@ export const usePlayer = create<PlayerState>()(
       queueOpen: false,
       fullscreen: false,
       lyricsSynced: false,
+      sleepTimerEndAt: null,
+      sleepAtTrackEnd: false,
 
       current: () => get().queue[get().index] ?? null,
 
@@ -279,6 +294,31 @@ export const usePlayer = create<PlayerState>()(
       setFullscreen: (open) => set({ fullscreen: open }),
 
       setLyricsSynced: (synced) => set({ lyricsSynced: synced }),
+
+      setSleepTimer: (minutes) => {
+        if (sleepTimeoutId) {
+          clearTimeout(sleepTimeoutId);
+          sleepTimeoutId = null;
+        }
+        if (minutes == null) {
+          set({ sleepTimerEndAt: null });
+          return;
+        }
+        sleepTimeoutId = setTimeout(() => {
+          getAudio()?.pause();
+          set({ isPlaying: false, sleepTimerEndAt: null });
+          sleepTimeoutId = null;
+        }, minutes * 60_000);
+        set({ sleepTimerEndAt: Date.now() + minutes * 60_000, sleepAtTrackEnd: false });
+      },
+
+      setSleepAtTrackEnd: (v) => {
+        if (sleepTimeoutId) {
+          clearTimeout(sleepTimeoutId);
+          sleepTimeoutId = null;
+        }
+        set({ sleepAtTrackEnd: v, sleepTimerEndAt: null });
+      },
 
       _tick: (time, duration) => set({ currentTime: time, duration }),
     }),

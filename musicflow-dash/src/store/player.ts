@@ -1,7 +1,6 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import type { Song } from "@/lib/api";
-import { localStreamUrl } from "@/lib/api";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
+import { ARTWORK_SIZES, localStreamUrl, withArtworkSize, type Song } from "@/lib/api";
 import { applyDynamicColor, colorFromString, dominantColorFromImage } from "@/lib/colors";
 
 export type RepeatMode = "off" | "all" | "one";
@@ -54,6 +53,26 @@ interface PlayerState {
   _tick: (time: number, duration: number) => void;
 }
 
+// zustand's persist middleware writes to storage on *every* set() call — including `_tick`,
+// which fires on every `timeupdate` (several times a second while a song plays) — even though
+// `partialize` below means the actually-persisted slice (`recentContexts`) almost never
+// changes. Without this, that's a synchronous localStorage write several times a second for
+// as long as anything is playing. This skips the write whenever the serialized value is
+// identical to what's already there, which it is for the overwhelming majority of ticks.
+let lastPersisted: string | null = null;
+const dedupingLocalStorage: StateStorage = {
+  getItem: (name) => localStorage.getItem(name),
+  setItem: (name, value) => {
+    if (value === lastPersisted) return;
+    lastPersisted = value;
+    localStorage.setItem(name, value);
+  },
+  removeItem: (name) => {
+    lastPersisted = null;
+    localStorage.removeItem(name);
+  },
+};
+
 let audio: HTMLAudioElement | null = null;
 
 function getAudio(): HTMLAudioElement | null {
@@ -82,7 +101,11 @@ function getAudio(): HTMLAudioElement | null {
 
 async function applyArtColor(song: Song) {
   if (song.artwork) {
-    applyDynamicColor(await dominantColorFromImage(song.artwork));
+    // Sampling only ever looks at a 24x24 canvas — fetching/decoding the original
+    // 600x600+ embedded art just for that (on every single track change) was pure waste.
+    applyDynamicColor(
+      await dominantColorFromImage(withArtworkSize(song.artwork, ARTWORK_SIZES.thumb)),
+    );
   } else {
     applyDynamicColor(colorFromString(song.album || song.title));
   }
@@ -261,7 +284,7 @@ export const usePlayer = create<PlayerState>()(
     }),
     {
       name: "musicflow-player",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => dedupingLocalStorage),
       partialize: (state) => ({ recentContexts: state.recentContexts }),
     },
   ),

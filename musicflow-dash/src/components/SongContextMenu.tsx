@@ -35,9 +35,18 @@ function Item({
 
 export function SongContextMenu() {
   const { song, contextSongs, contextLabel, playlistName, x, y, close } = useSongMenu();
-  const { playQueue, playNext, addToQueue } = usePlayer();
-  const { playlists, addPlaylist, addSongToPlaylist, removeSongFromPlaylist, deleteSong } =
-    useLibrary();
+  // Individually selected — this component is always mounted, and playQueue/playNext/addToQueue
+  // are stable function references, so selecting them (instead of destructuring the whole
+  // store) means this menu never re-renders from unrelated player state like the currentTime
+  // tick that fires several times a second during playback.
+  const playQueue = usePlayer((s) => s.playQueue);
+  const playNext = usePlayer((s) => s.playNext);
+  const addToQueue = usePlayer((s) => s.addToQueue);
+  const playlists = useLibrary((s) => s.playlists);
+  const addPlaylist = useLibrary((s) => s.addPlaylist);
+  const addSongToPlaylist = useLibrary((s) => s.addSongToPlaylist);
+  const removeSongFromPlaylist = useLibrary((s) => s.removeSongFromPlaylist);
+  const deleteSong = useLibrary((s) => s.deleteSong);
   const { openAlbum, openArtist } = useView();
   const navigate = useNavigate();
   const [submenu, setSubmenu] = useState(false);

@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -9,10 +10,12 @@ import uuid
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from functools import lru_cache
 
 from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
+from PIL import Image
 from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 
@@ -408,7 +411,11 @@ def process_job(job_id: str):
 
 @app.after_request
 def add_no_cache_headers(response):
-    if not request.path.startswith("/assets/"):
+    # Artwork sets its own long-lived Cache-Control (it's the one API response that's actually
+    # safe, and valuable, to cache — see get_cover/get_artwork) and would otherwise get
+    # clobbered back to no-store by this blanket rule on every other /api/ response.
+    is_artwork = request.path.startswith("/api/cover") or request.path.startswith("/api/artwork/")
+    if not request.path.startswith("/assets/") and not is_artwork:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
     return response
@@ -635,14 +642,21 @@ def get_artwork(job_id: str, index: int):
     if item["status"] not in ("done", "skipped") or not item["file"]:
         return jsonify({"error": "Not found"}), 404
 
+    size = request.args.get("size", type=int)
     try:
-        tags = ID3(item["file"])
-        apics = tags.getall("APIC")
-        if not apics:
-            return jsonify({"error": "No artwork"}), 404
-        apic = apics[0]
-        from flask import Response
-        return Response(apic.data, mimetype=apic.mime or "image/jpeg")
+        if size:
+            size = max(16, min(size, 1024))
+            data = _resized_cover_bytes(item["file"], os.path.getmtime(item["file"]), size)
+            if data is None:
+                return jsonify({"error": "No artwork"}), 404
+            resp = Response(data, mimetype="image/jpeg")
+        else:
+            raw = _raw_cover(item["file"])
+            if raw is None:
+                return jsonify({"error": "No artwork"}), 404
+            resp = Response(raw[0], mimetype=raw[1])
+        resp.headers["Cache-Control"] = "public, max-age=604800"
+        return resp
     except Exception:
         return jsonify({"error": "No artwork"}), 404
 
@@ -1518,6 +1532,34 @@ def stream_local_file():
     return send_file(path, mimetype="audio/mpeg", conditional=True)
 
 
+def _raw_cover(path: str) -> tuple[bytes, str] | None:
+    tags = ID3(path)
+    apics = tags.getall("APIC")
+    if not apics:
+        return None
+    return apics[0].data, (apics[0].mime or "image/jpeg")
+
+
+@lru_cache(maxsize=1024)
+def _resized_cover_bytes(path: str, mtime: float, size: int) -> bytes | None:
+    """Downscaled JPEG for a given (file, size) pair. `mtime` is part of the cache key purely
+    so a re-tagged/replaced file invalidates automatically — it's never read as a timestamp.
+    Embedded album art comes in at 600x600+ (sometimes much larger) straight from the metadata
+    lookup; serving that untouched for every 36px table row / 40px queue thumbnail was the
+    single biggest driver of decode CPU and memory — a decoded 600x600 bitmap is ~1.4MB
+    regardless of the box it's painted into, and there was no cache header telling the browser
+    it could avoid re-fetching it. This resizes once per (file, size) and is cheap after that."""
+    raw = _raw_cover(path)
+    if raw is None:
+        return None
+    img = Image.open(io.BytesIO(raw[0]))
+    img = img.convert("RGB")
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
 @app.route("/api/cover")
 def get_cover():
     path = request.args.get("path", "").strip()
@@ -1534,13 +1576,23 @@ def get_cover():
     if not os.path.isfile(path):
         return jsonify({"error": "Not found"}), 404
 
+    size = request.args.get("size", type=int)
     try:
-        tags = ID3(path)
-        apics = tags.getall("APIC")
-        if not apics:
-            return jsonify({"error": "No artwork"}), 404
-        apic = apics[0]
-        return Response(apic.data, mimetype=apic.mime or "image/jpeg")
+        if size:
+            size = max(16, min(size, 1024))
+            data = _resized_cover_bytes(path, os.path.getmtime(path), size)
+            if data is None:
+                return jsonify({"error": "No artwork"}), 404
+            resp = Response(data, mimetype="image/jpeg")
+        else:
+            raw = _raw_cover(path)
+            if raw is None:
+                return jsonify({"error": "No artwork"}), 404
+            resp = Response(raw[0], mimetype=raw[1])
+        # Art rarely changes once tagged, and the cache key above already accounts for it
+        # when it does — safe to let the browser hold onto this for a long time.
+        resp.headers["Cache-Control"] = "public, max-age=604800"
+        return resp
     except Exception:
         return jsonify({"error": "No artwork"}), 404
 

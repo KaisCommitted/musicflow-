@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { User } from "lucide-react";
-import type { Song } from "@/lib/api";
+import { ARTWORK_SIZES, withArtworkSize, type Song } from "@/lib/api";
 import { gradientFromString } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 
@@ -10,11 +10,13 @@ export function ArtistArt({
   tracks,
   className,
   iconClassName,
+  size = "thumb",
 }: {
   name: string;
   tracks: Song[];
   className?: string;
   iconClassName?: string;
+  size?: keyof typeof ARTWORK_SIZES;
 }) {
   const artwork = tracks[0]?.artwork;
   const [loaded, setLoaded] = useState(false);
@@ -23,7 +25,7 @@ export function ArtistArt({
   if (artwork) {
     return (
       <img
-        src={artwork}
+        src={withArtworkSize(artwork, ARTWORK_SIZES[size])}
         alt={`${name} artist art`}
         loading="lazy"
         onLoad={() => setLoaded(true)}

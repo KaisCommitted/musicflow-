@@ -124,7 +124,12 @@ export function FullScreenPlayer() {
                     transition={{ duration: 0.35 }}
                     className="glow-ring overflow-hidden rounded-3xl shadow-elevated"
                   >
-                    <AlbumArt song={song} className="h-72 w-72" iconClassName="h-12 w-12" />
+                    <AlbumArt
+                      song={song}
+                      className="h-72 w-72"
+                      iconClassName="h-12 w-12"
+                      size="large"
+                    />
                   </motion.div>
                 </AnimatePresence>
 

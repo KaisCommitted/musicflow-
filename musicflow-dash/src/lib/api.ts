@@ -27,13 +27,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 /* ---------------------------------- types --------------------------------- */
 
-export type DownloadStatus =
-  | "pending"
-  | "searching"
-  | "downloading"
-  | "done"
-  | "skipped"
-  | "error";
+export type DownloadStatus = "pending" | "searching" | "downloading" | "done" | "skipped" | "error";
 
 export interface DownloadItem {
   index: number;
@@ -116,7 +110,8 @@ export const getJobStatus = (jobId: string) => req<JobStatus>(`/api/status/${job
 
 export const stopJob = (jobId: string) => req<unknown>(`/api/stop/${jobId}`, { method: "POST" });
 export const pauseJob = (jobId: string) => req<unknown>(`/api/pause/${jobId}`, { method: "POST" });
-export const resumeJob = (jobId: string) => req<unknown>(`/api/resume/${jobId}`, { method: "POST" });
+export const resumeJob = (jobId: string) =>
+  req<unknown>(`/api/resume/${jobId}`, { method: "POST" });
 export const retryJob = (jobId: string) => req<unknown>(`/api/retry/${jobId}`, { method: "POST" });
 
 export const jobStreamUrl = (jobId: string, index: number) => `/api/stream/${jobId}/${index}`;
@@ -217,6 +212,16 @@ export const localStreamUrl = (path: string) => `/api/file?path=${encodeURICompo
 
 /** TODO(backend): GET /api/cover?path=... → embedded ID3 artwork (or 404). */
 export const localArtworkUrl = (path: string) => `/api/cover?path=${encodeURIComponent(path)}`;
+
+/** Appends a `size` hint to a `/api/cover` or `/api/artwork` URL so the backend returns a
+ * downscaled JPEG instead of the original (often 600x600+) embedded artwork — the difference
+ * between a few KB and ~100KB per image, multiplied by every thumbnail on screen. Pick from
+ * ARTWORK_SIZES rather than an arbitrary number so repeated uses of "the same" size (e.g. every
+ * row thumbnail) hit the backend's resize cache instead of each minting their own variant. */
+export const ARTWORK_SIZES = { thumb: 96, large: 320 } as const;
+export function withArtworkSize(url: string, size: number): string {
+  return `${url}${url.includes("?") ? "&" : "?"}size=${size}`;
+}
 
 /** TODO(backend): GET /api/local-lyrics?path=... → { lyrics } from the USLT frame. */
 export const getLocalLyrics = (path: string) =>

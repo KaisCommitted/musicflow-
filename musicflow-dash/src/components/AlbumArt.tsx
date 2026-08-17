@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Music2 } from "lucide-react";
-import type { Song } from "@/lib/api";
+import { ARTWORK_SIZES, withArtworkSize, type Song } from "@/lib/api";
 import { gradientFromString } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 
@@ -8,10 +8,14 @@ export function AlbumArt({
   song,
   className,
   iconClassName,
+  size = "thumb",
 }: {
   song: Pick<Song, "album" | "title" | "artwork"> | null;
   className?: string;
   iconClassName?: string;
+  /** "large" for anything shown much bigger than a row/grid thumbnail (album/artist/playlist
+   * headers, the full-screen player) — requests a bigger downscale so it doesn't look soft. */
+  size?: keyof typeof ARTWORK_SIZES;
 }) {
   // Resets whenever the artwork itself changes — covers both a fresh mount (a new row
   // scrolling into a virtualized list) and an existing instance switching to a new
@@ -30,7 +34,7 @@ export function AlbumArt({
   if (song.artwork) {
     return (
       <img
-        src={song.artwork}
+        src={withArtworkSize(song.artwork, ARTWORK_SIZES[size])}
         alt={`${song.album || song.title} cover art`}
         loading="lazy"
         onLoad={() => setLoaded(true)}

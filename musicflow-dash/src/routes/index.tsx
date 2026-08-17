@@ -37,15 +37,21 @@ function LibraryPage() {
         s.artist.toLowerCase().includes(q) ||
         s.album.toLowerCase().includes(q),
     );
+    // Capped like songs above — a broad query (e.g. a single common letter) against a library
+    // with hundreds/thousands of distinct album or artist tags could otherwise render just as
+    // many uncapped result buttons.
     return {
       songs: matchSongs.slice(0, 30),
       albums: [
         ...new Set(songs.filter((s) => s.album.toLowerCase().includes(q)).map((s) => s.album)),
-      ],
+      ].slice(0, 30),
       artists: [
         ...new Set(songs.filter((s) => s.artist.toLowerCase().includes(q)).map((s) => s.artist)),
-      ],
-      playlists: playlists.filter((p) => p.name.toLowerCase().includes(q)).map((p) => p.name),
+      ].slice(0, 30),
+      playlists: playlists
+        .filter((p) => p.name.toLowerCase().includes(q))
+        .map((p) => p.name)
+        .slice(0, 30),
     };
   }, [q, songs, playlists]);
 

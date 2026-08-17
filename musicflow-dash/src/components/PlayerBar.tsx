@@ -83,7 +83,7 @@ export function PlayerBar() {
           className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg glow-ring"
           aria-label="Open full-screen player"
         >
-          <AlbumArt song={song} className="h-full w-full" iconClassName="h-5 w-5" />
+          <AlbumArt song={song} className="h-full w-full" iconClassName="h-5 w-5" size="large" />
           <span className="absolute inset-0 grid place-items-center bg-background/60 opacity-0 transition-opacity group-hover:opacity-100">
             <Maximize2 className="h-4 w-4" />
           </span>

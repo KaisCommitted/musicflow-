@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Check, Clipboard, ListMusic, Loader2, Search, X } from "lucide-react";
 import type { Song } from "@/lib/api";
 import {
@@ -73,12 +74,26 @@ export function CreatePlaylistDialog({
   const filteredSongs = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = q
-      ? songs.filter(
-          (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q),
-        )
+      ? songs.filter((s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q))
       : songs;
     return list.slice(0, 200);
   }, [songs, query]);
+
+  // The picker owns its own scrollbar (it's not part of the page underneath the dialog), so
+  // this virtualizes against itself rather than the page-level ScrollContainerContext SongTable
+  // uses — no header content sits above the list inside this box, so no scrollMargin is needed.
+  // State, not a plain ref: the Dialog only mounts this box once `open` is true, and a plain
+  // ref changing after the virtualizer's already run its first measurement doesn't reliably
+  // trigger a re-measure — a state setter used as the ref callback does, since it's a real
+  // render trigger tied to the DOM node actually becoming available.
+  const [pickerScrollEl, setPickerScrollEl] = useState<HTMLDivElement | null>(null);
+  const pickerVirtualizer = useVirtualizer({
+    count: filteredSongs.length,
+    getScrollElement: () => pickerScrollEl,
+    estimateSize: () => 52,
+    overscan: 8,
+    getItemKey: (index) => filteredSongs[index]!.path,
+  });
 
   const resolvedBlocks = useMemo(() => {
     if (mode !== "text" || !text.trim()) return [];
@@ -152,33 +167,44 @@ export function CreatePlaylistDialog({
               />
             </div>
 
-            <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
+            <div
+              ref={setPickerScrollEl}
+              className="max-h-72 overflow-y-auto rounded-lg border border-border"
+            >
               {filteredSongs.length === 0 && (
                 <p className="p-4 text-center text-sm text-muted-foreground">No songs match.</p>
               )}
-              {filteredSongs.map((s) => {
-                const checked = selected.includes(s.path);
-                return (
-                  <label
-                    key={s.path}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 border-b border-border/60 px-3 py-2 text-sm transition-colors last:border-b-0 hover:bg-accent",
-                      checked && "bg-primary/5",
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSong(s.path)}
-                      className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate">{s.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{s.artist}</p>
-                    </div>
-                  </label>
-                );
-              })}
+              <div className="relative" style={{ height: pickerVirtualizer.getTotalSize() }}>
+                {pickerVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const s = filteredSongs[virtualRow.index]!;
+                  const checked = selected.includes(s.path);
+                  return (
+                    <label
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      ref={pickerVirtualizer.measureElement}
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      className={cn(
+                        // (no last:border-b-0 — with virtualization, the DOM's last mounted
+                        // row isn't necessarily the list's actual last item)
+                        "absolute left-0 top-0 flex w-full cursor-pointer items-center gap-3 border-b border-border/60 px-3 py-2 text-sm transition-colors hover:bg-accent",
+                        checked && "bg-primary/5",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSong(s.path)}
+                        className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate">{s.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{s.artist}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="flex items-center justify-between">
@@ -296,7 +322,8 @@ export function CreatePlaylistDialog({
                     className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Create {resolvedBlocks.length > 1 ? `${resolvedBlocks.length} Playlists` : "Playlist"}
+                    Create{" "}
+                    {resolvedBlocks.length > 1 ? `${resolvedBlocks.length} Playlists` : "Playlist"}
                   </button>
                 </div>
               </>

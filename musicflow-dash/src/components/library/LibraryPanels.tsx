@@ -64,6 +64,7 @@ export function AlbumsView({ songs }: { songs: Song[] }) {
             song={first ?? null}
             className="h-40 w-40 rounded-2xl shadow-elevated"
             iconClassName="h-8 w-8"
+            size="large"
           />
           <div className="pb-2">
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Album</p>
@@ -100,6 +101,7 @@ export function AlbumsView({ songs }: { songs: Song[] }) {
             song={tracks[0] ?? null}
             className="mb-3 aspect-square w-full rounded-xl"
             iconClassName="h-7 w-7"
+            size="large"
           />
           <p className="truncate text-sm font-semibold">{name}</p>
           <p className="truncate text-xs text-muted-foreground">{tracks[0]?.artist}</p>
@@ -137,6 +139,7 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
             tracks={tracks}
             className="h-32 w-32 rounded-full shadow-elevated"
             iconClassName="h-10 w-10"
+            size="large"
           />
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Artist</p>
@@ -205,13 +208,27 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
     toggleSelectedPlaylist,
     clearSelection,
   } = useView();
-  const { playlists, removePlaylist } = useLibrary();
+  const playlists = useLibrary((s) => s.playlists);
+  const removePlaylist = useLibrary((s) => s.removePlaylist);
   const playQueue = usePlayer((s) => s.playQueue);
   const [createOpen, setCreateOpen] = useState(false);
 
+  // Keyed once per (playlists, songs) change rather than re-filtered inline on every render —
+  // PlaylistArt's own useMemo (the deterministic "which 4 songs" shuffle) is keyed on this
+  // array's identity, so handing it a fresh array every render was silently defeating that
+  // memoization for every playlist card on every re-render of this view.
+  const tracksByPlaylist = useMemo(() => {
+    const map = new Map<string, Song[]>();
+    for (const p of playlists)
+      map.set(
+        p.name,
+        songs.filter((s) => p.songs.includes(s.path)),
+      );
+    return map;
+  }, [playlists, songs]);
+
   if (playlist) {
-    const p = playlists.find((x) => x.name === playlist);
-    const tracks = songs.filter((s) => p?.songs.includes(s.path));
+    const tracks = tracksByPlaylist.get(playlist) ?? [];
     return (
       <div>
         <BackButton label="All playlists" onClick={back} />
@@ -283,7 +300,7 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5">
         {playlists.map((p, i) => {
           const selected = selectedPlaylists.includes(p.name);
-          const tracks = songs.filter((s) => p.songs.includes(s.path));
+          const tracks = tracksByPlaylist.get(p.name) ?? [];
           return (
             <motion.div
               key={p.name}

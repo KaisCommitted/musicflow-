@@ -18,10 +18,12 @@ import {
   Volume2,
 } from "lucide-react";
 import {
+  ARTWORK_SIZES,
   getHistory,
   getHistoryDetail,
   jobArtworkUrl,
   retryHistoryItem,
+  withArtworkSize,
   type HistoryDetail,
   type HistoryJobSummary,
 } from "@/lib/api";
@@ -59,8 +61,20 @@ function DownloadPage() {
   const [tab, setTab] = useState<"download" | "history">("download");
   const [text, setText] = useState("");
   const [page, setPage] = useState(0);
-  const { jobId, status, items, error, start, pause, resume, stop, retry, clear, playableSongs, _resumeIfNeeded } =
-    useDownload();
+  const {
+    jobId,
+    status,
+    items,
+    error,
+    start,
+    pause,
+    resume,
+    stop,
+    retry,
+    clear,
+    playableSongs,
+    _resumeIfNeeded,
+  } = useDownload();
   const playQueue = usePlayer((s) => s.playQueue);
   const currentSong = usePlayer((s) => s.current());
   const isPlaying = usePlayer((s) => s.isPlaying);
@@ -116,257 +130,258 @@ function DownloadPage() {
       {tab === "history" && <HistoryPanel />}
 
       {tab === "download" && (
-      <AnimatePresence mode="wait">
-        {/* ─── Input Phase ─── */}
-        {showInput && !isFinished && (
-          <motion.div
-            key="input"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className="flex flex-1 flex-col items-center justify-center px-8 py-12"
-          >
-            <h1 className="text-2xl font-bold">Download</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              One song per line — "Artist – Title" works best.
-            </p>
-            <div className="mt-8 w-full max-w-2xl">
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={12}
-                placeholder={"Daft Punk – Digital Love\nTame Impala – Let It Happen\nArctic Monkeys – Do I Wanna Know?"}
-                className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
-              />
-              <div className="mt-4 flex justify-center">
-                <button
-                  onClick={handleStart}
-                  disabled={!queries.length}
-                  className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
-                >
-                  <Play className="h-4 w-4" /> Start Download{" "}
-                  {queries.length ? `(${queries.length})` : ""}
-                </button>
-              </div>
-              {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
-            </div>
-          </motion.div>
-        )}
-
-        {/* ─── Active / Finished Phase ─── */}
-        {(isRunning || isFinished) && (
-          <motion.div
-            key="progress"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className="flex-1 px-8 py-8"
-          >
-            {/* Stats bar */}
+        <AnimatePresence mode="wait">
+          {/* ─── Input Phase ─── */}
+          {showInput && !isFinished && (
             <motion.div
-              layout
-              className="surface flex items-center gap-6 px-6 py-4"
+              key="input"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="flex flex-1 flex-col items-center justify-center px-8 py-12"
             >
-              <div className="flex-1">
-                <div className="flex items-baseline gap-3">
-                  <span className="text-3xl font-bold">{pct}%</span>
-                  {status?.paused && (
-                    <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">
-                      Paused
-                    </span>
-                  )}
-                  {isFinished && status.errors === 0 && (
-                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
-                      Complete
-                    </span>
-                  )}
-                  {isFinished && status.errors > 0 && (
-                    <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
-                      {status.errors} failed
-                    </span>
-                  )}
+              <h1 className="text-2xl font-bold">Download</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                One song per line — "Artist – Title" works best.
+              </p>
+              <div className="mt-8 w-full max-w-2xl">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={12}
+                  placeholder={
+                    "Daft Punk – Digital Love\nTame Impala – Let It Happen\nArctic Monkeys – Do I Wanna Know?"
+                  }
+                  className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
+                />
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={handleStart}
+                    disabled={!queries.length}
+                    className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+                  >
+                    <Play className="h-4 w-4" /> Start Download{" "}
+                    {queries.length ? `(${queries.length})` : ""}
+                  </button>
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <motion.div
-                    className="h-full rounded-full bg-primary"
-                    animate={{ width: `${pct}%` }}
-                    transition={{ type: "spring", stiffness: 120, damping: 20 }}
-                  />
-                </div>
-              </div>
-              <div className="flex gap-4 text-center">
-                {[
-                  ["Total", status?.total ?? 0],
-                  ["Done", status?.done ?? 0],
-                  ["Skipped", status?.skipped ?? 0],
-                  ["Errors", status?.errors ?? 0],
-                ].map(([label, val]) => (
-                  <div key={String(label)}>
-                    <p className="text-lg font-bold tabular-nums">{val}</p>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {label}
-                    </p>
-                  </div>
-                ))}
+                {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
               </div>
             </motion.div>
+          )}
 
-            {/* Action buttons */}
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              {isRunning && (
-                <>
-                  <button
-                    onClick={() => (status!.paused ? resume() : pause())}
-                    className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-primary hover:text-primary"
-                  >
-                    {status!.paused ? (
-                      <Play className="h-4 w-4" />
-                    ) : (
-                      <Pause className="h-4 w-4" />
+          {/* ─── Active / Finished Phase ─── */}
+          {(isRunning || isFinished) && (
+            <motion.div
+              key="progress"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 px-8 py-8"
+            >
+              {/* Stats bar */}
+              <motion.div layout className="surface flex items-center gap-6 px-6 py-4">
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-3xl font-bold">{pct}%</span>
+                    {status?.paused && (
+                      <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">
+                        Paused
+                      </span>
                     )}
-                    {status!.paused ? "Resume" : "Pause"}
-                  </button>
-                  <button
-                    onClick={stop}
-                    className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-destructive hover:text-destructive"
-                  >
-                    <Square className="h-4 w-4" /> Stop
-                  </button>
-                </>
-              )}
-              {isFinished && (
-                <>
-                  {status!.errors > 0 && (
+                    {isFinished && status.errors === 0 && (
+                      <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
+                        Complete
+                      </span>
+                    )}
+                    {isFinished && status.errors > 0 && (
+                      <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                        {status.errors} failed
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <motion.div
+                      className="h-full rounded-full bg-primary"
+                      animate={{ width: `${pct}%` }}
+                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-4 text-center">
+                  {[
+                    ["Total", status?.total ?? 0],
+                    ["Done", status?.done ?? 0],
+                    ["Skipped", status?.skipped ?? 0],
+                    ["Errors", status?.errors ?? 0],
+                  ].map(([label, val]) => (
+                    <div key={String(label)}>
+                      <p className="text-lg font-bold tabular-nums">{val}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+
+              {/* Action buttons */}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {isRunning && (
+                  <>
                     <button
-                      onClick={retry}
+                      onClick={() => (status!.paused ? resume() : pause())}
                       className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-primary hover:text-primary"
                     >
-                      <RotateCcw className="h-4 w-4" /> Retry failed
+                      {status!.paused ? (
+                        <Play className="h-4 w-4" />
+                      ) : (
+                        <Pause className="h-4 w-4" />
+                      )}
+                      {status!.paused ? "Resume" : "Pause"}
                     </button>
-                  )}
-                  <button
-                    onClick={clear}
-                    className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-foreground hover:text-foreground"
-                  >
-                    <Trash2 className="h-4 w-4" /> New download
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* Song list */}
-            {pageItems.length > 0 && (
-              <div className="mt-6">
-                {totalPages > 1 && (
-                  <div className="mb-3 flex items-center gap-2">
                     <button
-                      onClick={() => setPage((p) => Math.max(0, p - 1))}
-                      disabled={page === 0}
-                      className="grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                      onClick={stop}
+                      className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-destructive hover:text-destructive"
                     >
-                      <ChevronLeft className="h-4 w-4" />
+                      <Square className="h-4 w-4" /> Stop
                     </button>
-                    <span className="text-xs text-muted-foreground">
-                      {page + 1} / {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                      disabled={page >= totalPages - 1}
-                      className="grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
+                  </>
                 )}
-
-                <div className="space-y-2">
-                  <AnimatePresence initial={false}>
-                    {pageItems.map((item) => {
-                      const isPlayable =
-                        item.status === "done" || item.status === "skipped";
-                      const isCurrentlyPlaying =
-                        isPlayable &&
-                        currentSong?.id === `dl-${jobId}-${item.index}` &&
-                        isPlaying;
-
-                      return (
-                        <motion.div
-                          key={`${item.index}-${item.status}`}
-                          initial={{ opacity: 0, x: -12 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: 12 }}
-                          transition={{ duration: 0.25 }}
-                          className="surface flex items-center gap-4 px-4 py-3"
-                        >
-                          {isPlayable && jobId ? (
-                            <button
-                              onClick={() => handlePlay(item.index)}
-                              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors hover:bg-primary/15"
-                              aria-label={`Play ${item.title}`}
-                            >
-                              {isCurrentlyPlaying ? (
-                                <Volume2 className="h-4 w-4 text-primary" />
-                              ) : (
-                                <Play className="h-4 w-4 text-primary" />
-                              )}
-                            </button>
-                          ) : (
-                            <StatusIcon status={item.status} />
-                          )}
-                          {isPlayable && jobId ? (
-                            <img
-                              src={jobArtworkUrl(jobId, item.index)}
-                              alt=""
-                              className="h-10 w-10 shrink-0 rounded-lg bg-muted object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = "none";
-                              }}
-                            />
-                          ) : null}
-                          <div className="min-w-0 flex-1">
-                            <p
-                              className={cn(
-                                "truncate text-sm font-medium",
-                                isCurrentlyPlaying && "text-primary",
-                              )}
-                            >
-                              {item.title ?? item.query}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {item.artist ?? item.query}
-                              {item.error ? ` · ${item.error}` : ""}
-                            </p>
-                            {item.status === "downloading" && (
-                              <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-                                <div
-                                  className="h-full rounded-full bg-primary transition-all"
-                                  style={{
-                                    width: `${Math.round((item.progress ?? 0) * 100)}%`,
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                          <span
-                            className={cn(
-                              "text-xs font-medium",
-                              STATUS_STYLES[item.status]?.className,
-                            )}
-                          >
-                            {STATUS_STYLES[item.status]?.label ?? item.status}
-                          </span>
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
-                </div>
+                {isFinished && (
+                  <>
+                    {status!.errors > 0 && (
+                      <button
+                        onClick={retry}
+                        className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-primary hover:text-primary"
+                      >
+                        <RotateCcw className="h-4 w-4" /> Retry failed
+                      </button>
+                    )}
+                    <button
+                      onClick={clear}
+                      className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm transition-colors hover:border-foreground hover:text-foreground"
+                    >
+                      <Trash2 className="h-4 w-4" /> New download
+                    </button>
+                  </>
+                )}
               </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+              {/* Song list */}
+              {pageItems.length > 0 && (
+                <div className="mt-6">
+                  {totalPages > 1 && (
+                    <div className="mb-3 flex items-center gap-2">
+                      <button
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-xs text-muted-foreground">
+                        {page + 1} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                        disabled={page >= totalPages - 1}
+                        className="grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <AnimatePresence initial={false}>
+                      {pageItems.map((item) => {
+                        const isPlayable = item.status === "done" || item.status === "skipped";
+                        const isCurrentlyPlaying =
+                          isPlayable &&
+                          currentSong?.id === `dl-${jobId}-${item.index}` &&
+                          isPlaying;
+
+                        return (
+                          <motion.div
+                            key={`${item.index}-${item.status}`}
+                            initial={{ opacity: 0, x: -12 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 12 }}
+                            transition={{ duration: 0.25 }}
+                            className="surface flex items-center gap-4 px-4 py-3"
+                          >
+                            {isPlayable && jobId ? (
+                              <button
+                                onClick={() => handlePlay(item.index)}
+                                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors hover:bg-primary/15"
+                                aria-label={`Play ${item.title}`}
+                              >
+                                {isCurrentlyPlaying ? (
+                                  <Volume2 className="h-4 w-4 text-primary" />
+                                ) : (
+                                  <Play className="h-4 w-4 text-primary" />
+                                )}
+                              </button>
+                            ) : (
+                              <StatusIcon status={item.status} />
+                            )}
+                            {isPlayable && jobId ? (
+                              <img
+                                src={withArtworkSize(
+                                  jobArtworkUrl(jobId, item.index),
+                                  ARTWORK_SIZES.thumb,
+                                )}
+                                alt=""
+                                className="h-10 w-10 shrink-0 rounded-lg bg-muted object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = "none";
+                                }}
+                              />
+                            ) : null}
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={cn(
+                                  "truncate text-sm font-medium",
+                                  isCurrentlyPlaying && "text-primary",
+                                )}
+                              >
+                                {item.title ?? item.query}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {item.artist ?? item.query}
+                                {item.error ? ` · ${item.error}` : ""}
+                              </p>
+                              {item.status === "downloading" && (
+                                <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-all"
+                                    style={{
+                                      width: `${Math.round((item.progress ?? 0) * 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                            <span
+                              className={cn(
+                                "text-xs font-medium",
+                                STATUS_STYLES[item.status]?.className,
+                              )}
+                            >
+                              {STATUS_STYLES[item.status]?.label ?? item.status}
+                            </span>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       )}
     </div>
   );
@@ -481,9 +496,7 @@ function HistoryPanel() {
   return (
     <div className="px-8 py-6">
       {error && <p className="text-xs text-destructive">{error}</p>}
-      {!error && jobs.length === 0 && (
-        <p className="text-sm text-muted-foreground">No jobs yet.</p>
-      )}
+      {!error && jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs yet.</p>}
       <div className="space-y-2">
         {jobs.map((j) => (
           <button

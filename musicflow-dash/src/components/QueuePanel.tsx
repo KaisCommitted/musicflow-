@@ -80,7 +80,18 @@ function QueueRow({
 }
 
 export function QueuePanel() {
-  const { queue, index, queueOpen, setQueueOpen, reorderQueue, context } = usePlayer();
+  // Individually selected, not destructured from usePlayer() as a whole — this component is
+  // always mounted (AppShell renders it unconditionally), so a whole-store subscription means
+  // a full re-render — including every row, each with its own dnd-kit sortable setup — on every
+  // `currentTime` tick (several times a second while something plays), whether or not the
+  // drawer is even open. Selecting each field means React only re-renders when that field
+  // actually changes.
+  const queue = usePlayer((s) => s.queue);
+  const index = usePlayer((s) => s.index);
+  const queueOpen = usePlayer((s) => s.queueOpen);
+  const setQueueOpen = usePlayer((s) => s.setQueueOpen);
+  const reorderQueue = usePlayer((s) => s.reorderQueue);
+  const context = usePlayer((s) => s.context);
 
   const ids = queue.map((s, i) => `${s.id}::${i}`);
 

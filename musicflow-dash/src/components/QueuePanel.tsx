@@ -1,11 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Volume2, X } from "lucide-react";
 import type { Song } from "@/lib/api";
@@ -32,11 +28,15 @@ function QueueRow({
   const removeFromQueue = usePlayer((s) => s.removeFromQueue);
 
   return (
-    <li
+    <motion.li
       ref={setNodeRef}
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.2 }}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "group flex items-center gap-2 rounded-lg px-2 py-2 hover-row",
+        "group flex items-center gap-2 overflow-hidden rounded-lg px-2 py-2 hover-row",
         isCurrent && "bg-primary/10",
         isDragging && "opacity-80 shadow-elevated",
       )}
@@ -55,9 +55,7 @@ function QueueRow({
       >
         <AlbumArt song={song} className="h-9 w-9 shrink-0 rounded-md" />
         <span className="min-w-0 flex-1">
-          <span
-            className={cn("block truncate text-sm", isCurrent && "font-semibold text-primary")}
-          >
+          <span className={cn("block truncate text-sm", isCurrent && "font-semibold text-primary")}>
             {song.title}
           </span>
           <span className="block truncate text-xs text-muted-foreground">{song.artist}</span>
@@ -77,7 +75,7 @@ function QueueRow({
       >
         <X className="h-4 w-4" />
       </button>
-    </li>
+    </motion.li>
   );
 }
 
@@ -128,15 +126,17 @@ export function QueuePanel() {
               >
                 <SortableContext items={ids} strategy={verticalListSortingStrategy}>
                   <ul className="space-y-1">
-                    {queue.map((song, i) => (
-                      <QueueRow
-                        key={ids[i]}
-                        id={ids[i]!}
-                        song={song}
-                        index={i}
-                        isCurrent={i === index}
-                      />
-                    ))}
+                    <AnimatePresence initial={false}>
+                      {queue.map((song, i) => (
+                        <QueueRow
+                          key={ids[i]}
+                          id={ids[i]!}
+                          song={song}
+                          index={i}
+                          isCurrent={i === index}
+                        />
+                      ))}
+                    </AnimatePresence>
                   </ul>
                 </SortableContext>
               </DndContext>

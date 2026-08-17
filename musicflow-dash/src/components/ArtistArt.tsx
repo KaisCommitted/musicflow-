@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { User } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { gradientFromString } from "@/lib/colors";
@@ -16,13 +17,21 @@ export function ArtistArt({
   iconClassName?: string;
 }) {
   const artwork = tracks[0]?.artwork;
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => setLoaded(false), [artwork]);
+
   if (artwork) {
     return (
       <img
         src={artwork}
         alt={`${name} artist art`}
         loading="lazy"
-        className={cn("object-cover", className)}
+        onLoad={() => setLoaded(true)}
+        className={cn(
+          "object-cover opacity-0 transition-opacity duration-300",
+          loaded && "opacity-100",
+          className,
+        )}
       />
     );
   }

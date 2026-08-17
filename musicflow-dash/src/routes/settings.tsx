@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { motion } from "framer-motion";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
@@ -46,15 +47,14 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       aria-checked={on}
       onClick={() => onChange(!on)}
       className={cn(
-        "h-6 w-11 shrink-0 rounded-full border border-border p-0.5 transition-colors",
-        on ? "bg-primary" : "bg-muted",
+        "flex h-6 w-11 shrink-0 rounded-full border border-border p-0.5 transition-colors",
+        on ? "justify-end bg-primary" : "justify-start bg-muted",
       )}
     >
-      <span
-        className={cn(
-          "block h-4.5 w-4.5 rounded-full bg-background transition-transform",
-          on ? "translate-x-5" : "translate-x-0",
-        )}
+      <motion.span
+        layout
+        transition={{ type: "spring", stiffness: 700, damping: 32 }}
+        className="block h-4.5 w-4.5 rounded-full bg-background"
         style={{ height: 18, width: 18 }}
       />
     </button>
@@ -166,11 +166,11 @@ function SettingsPage() {
       <p className="mt-1 text-sm text-muted-foreground">{songs.length} tracks in your library.</p>
 
       <div className="mt-6 max-w-3xl space-y-3">
-        <Row title="Music folder" description="Scanned for MP3s and .m3u8 playlists — also where new YouTube downloads are saved.">
-          <FolderPicker
-            value={settings.musicFolder}
-            onChange={(v) => set("musicFolder", v)}
-          />
+        <Row
+          title="Music folder"
+          description="Scanned for MP3s and .m3u8 playlists — also where new YouTube downloads are saved."
+        >
+          <FolderPicker value={settings.musicFolder} onChange={(v) => set("musicFolder", v)} />
         </Row>
         <Row
           title="Rescan library"

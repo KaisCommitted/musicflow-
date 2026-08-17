@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
@@ -73,7 +74,19 @@ export function Sidebar() {
         >
           <Radio className="h-5 w-5" />
         </span>
-        {!collapsed && <span className="brand-text text-lg font-extrabold">Musicflow</span>}
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.span
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -6 }}
+              transition={{ duration: 0.15 }}
+              className="brand-text text-lg font-extrabold"
+            >
+              Musicflow
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
 
       <nav className="flex flex-col gap-1 px-3">
@@ -84,14 +97,21 @@ export function Sidebar() {
               key={to}
               to={to}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-all hover:bg-accent hover:text-foreground",
-                active && "bg-primary/15 text-primary",
+                "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-accent hover:text-foreground",
+                active && "text-primary",
                 collapsed && "justify-center px-0",
               )}
               title={label}
             >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
-              {!collapsed && label}
+              {active && (
+                <motion.span
+                  layoutId="nav-active-pill"
+                  className="absolute inset-0 rounded-lg bg-primary/15"
+                  transition={{ type: "spring", stiffness: 400, damping: 34 }}
+                />
+              )}
+              <Icon className="relative z-10 h-[18px] w-[18px] shrink-0" />
+              {!collapsed && <span className="relative z-10">{label}</span>}
             </Link>
           );
         })}
@@ -106,21 +126,30 @@ export function Sidebar() {
             <p className="px-3 text-xs text-muted-foreground/70">Nothing played yet.</p>
           ) : (
             <ul className="space-y-1">
-              {recentContexts.map((ctx) => {
-                const Icon = contextIcon(ctx.kind);
-                return (
-                  <li key={ctx.label}>
-                    <button
-                      onClick={() => resume(ctx)}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs text-sidebar-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+              <AnimatePresence initial={false}>
+                {recentContexts.map((ctx) => {
+                  const Icon = contextIcon(ctx.kind);
+                  return (
+                    <motion.li
+                      key={ctx.label}
+                      layout
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -8 }}
+                      transition={{ type: "spring", stiffness: 420, damping: 36 }}
                     >
-                      <Icon className="h-4 w-4 shrink-0 text-primary" />
-                      <span className="truncate">{ctx.label}</span>
-                      <Clock className="ml-auto h-3 w-3 shrink-0 opacity-40" />
-                    </button>
-                  </li>
-                );
-              })}
+                      <button
+                        onClick={() => resume(ctx)}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs text-sidebar-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-primary" />
+                        <span className="truncate">{ctx.label}</span>
+                        <Clock className="ml-auto h-3 w-3 shrink-0 opacity-40" />
+                      </button>
+                    </motion.li>
+                  );
+                })}
+              </AnimatePresence>
             </ul>
           )}
         </div>
@@ -131,7 +160,18 @@ export function Sidebar() {
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         className="m-3 mt-auto flex items-center justify-center gap-2 rounded-lg border border-sidebar-border py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={collapsed ? "right" : "left"}
+            initial={{ rotate: -90, opacity: 0 }}
+            animate={{ rotate: 0, opacity: 1 }}
+            exit={{ rotate: 90, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="grid place-items-center"
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </motion.span>
+        </AnimatePresence>
         {!collapsed && "Collapse"}
       </button>
     </aside>

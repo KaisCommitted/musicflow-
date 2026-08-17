@@ -15,6 +15,7 @@ import {
 import { AlbumArt } from "@/components/AlbumArt";
 import { Waveform } from "@/components/Waveform";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
 import { formatTime } from "@/lib/format";
@@ -41,10 +42,8 @@ export function FullScreenPlayer() {
   } = usePlayer();
   const song = usePlayer((s) => s.current());
   const total = duration || song?.duration || 0;
-  const { sources, activeMethod, lines, synced, switchSource, shiftOffset, sessionShift } = useLyrics(
-    fullscreen ? song : null,
-    total,
-  );
+  const { sources, activeMethod, lines, synced, switchSource, shiftOffset, sessionShift } =
+    useLyrics(fullscreen ? song : null, total);
   const active = activeLyricIndex(lines, currentTime);
   const listRef = useRef<HTMLDivElement>(null);
   const realSources = sources.filter((s) => s.method !== "demo");
@@ -99,13 +98,15 @@ export function FullScreenPlayer() {
 
           <div className="relative flex h-full flex-col">
             <div className="flex items-center justify-between px-6 py-5">
-              <button
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.9, y: 2 }}
                 onClick={() => setFullscreen(false)}
                 aria-label="Minimize player"
                 className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
               >
                 <ChevronDown className="h-5 w-5" />
-              </button>
+              </motion.button>
               <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
                 Now Playing
               </p>
@@ -145,7 +146,9 @@ export function FullScreenPlayer() {
                     </div>
                   </div>
                   <div className="mt-5 flex items-center justify-center gap-3">
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.88 }}
                       onClick={toggleShuffle}
                       aria-label="Shuffle"
                       className={cn(
@@ -154,21 +157,43 @@ export function FullScreenPlayer() {
                       )}
                     >
                       <Shuffle className="h-4 w-4" />
-                    </button>
-                    <button onClick={prev} aria-label="Previous" className="grid h-11 w-11 place-items-center rounded-xl hover:bg-card/60">
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.88 }}
+                      onClick={prev}
+                      aria-label="Previous"
+                      className="grid h-11 w-11 place-items-center rounded-xl hover:bg-card/60"
+                    >
                       <SkipBack className="h-5 w-5" />
-                    </button>
-                    <button
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.92 }}
                       onClick={toggle}
                       aria-label={isPlaying ? "Pause" : "Play"}
-                      className="grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-glow transition-transform hover:scale-105"
+                      className="grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-glow"
                     >
-                      {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="ml-1 h-6 w-6" />}
-                    </button>
-                    <button onClick={() => next(true)} aria-label="Next" className="grid h-11 w-11 place-items-center rounded-xl hover:bg-card/60">
+                      <IconSwap id={isPlaying ? "pause" : "play"}>
+                        {isPlaying ? (
+                          <Pause className="h-6 w-6" />
+                        ) : (
+                          <Play className="ml-1 h-6 w-6" />
+                        )}
+                      </IconSwap>
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.88 }}
+                      onClick={() => next(true)}
+                      aria-label="Next"
+                      className="grid h-11 w-11 place-items-center rounded-xl hover:bg-card/60"
+                    >
                       <SkipForward className="h-5 w-5" />
-                    </button>
-                    <button
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.88 }}
                       onClick={cycleRepeat}
                       aria-label={`Repeat ${repeat}`}
                       className={cn(
@@ -176,8 +201,14 @@ export function FullScreenPlayer() {
                         repeat !== "off" && "text-primary",
                       )}
                     >
-                      {repeat === "one" ? <Repeat1 className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
-                    </button>
+                      <IconSwap id={repeat}>
+                        {repeat === "one" ? (
+                          <Repeat1 className="h-4 w-4" />
+                        ) : (
+                          <Repeat className="h-4 w-4" />
+                        )}
+                      </IconSwap>
+                    </motion.button>
                   </div>
                 </div>
               </div>

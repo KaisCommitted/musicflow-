@@ -13,7 +13,9 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Slider } from "@/components/ui/slider";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { AlbumArt } from "@/components/AlbumArt";
 import { usePlayer } from "@/store/player";
 import { formatTime } from "@/lib/format";
@@ -23,12 +25,14 @@ function IconButton({
   active,
   className,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+}: React.ComponentProps<typeof motion.button> & { active?: boolean }) {
   return (
-    <button
+    <motion.button
+      whileHover={{ scale: 1.1 }}
+      whileTap={{ scale: 0.88 }}
       {...props}
       className={cn(
-        "grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-all hover:bg-accent hover:text-foreground",
+        "grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
         active && "text-primary",
         className,
       )}
@@ -72,7 +76,9 @@ export function PlayerBar() {
       }}
     >
       <div className="flex w-72 min-w-0 items-center gap-3">
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setFullscreen(true)}
           className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg glow-ring"
           aria-label="Open full-screen player"
@@ -81,7 +87,7 @@ export function PlayerBar() {
           <span className="absolute inset-0 grid place-items-center bg-background/60 opacity-0 transition-opacity group-hover:opacity-100">
             <Maximize2 className="h-4 w-4" />
           </span>
-        </button>
+        </motion.button>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{song.title}</p>
           <p className="truncate text-xs text-muted-foreground">{song.artist}</p>
@@ -96,13 +102,17 @@ export function PlayerBar() {
           <IconButton onClick={prev} aria-label="Previous">
             <SkipBack className="h-5 w-5" />
           </IconButton>
-          <button
+          <motion.button
             onClick={toggle}
             aria-label={isPlaying ? "Pause" : "Play"}
-            className="grid h-11 w-11 place-items-center rounded-full bg-primary text-primary-foreground shadow-glow transition-transform hover:scale-105 active:scale-95"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            className="grid h-11 w-11 place-items-center rounded-full bg-primary text-primary-foreground shadow-glow"
           >
-            {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5" />}
-          </button>
+            <IconSwap id={isPlaying ? "pause" : "play"}>
+              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5" />}
+            </IconSwap>
+          </motion.button>
           <IconButton onClick={() => next(true)} aria-label="Next">
             <SkipForward className="h-5 w-5" />
           </IconButton>
@@ -111,7 +121,9 @@ export function PlayerBar() {
             onClick={cycleRepeat}
             aria-label={`Repeat: ${repeat}`}
           >
-            {repeat === "one" ? <Repeat1 className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
+            <IconSwap id={repeat}>
+              {repeat === "one" ? <Repeat1 className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
+            </IconSwap>
           </IconButton>
         </div>
         <div className="flex items-center gap-3">
@@ -139,13 +151,15 @@ export function PlayerBar() {
           <ListMusic className="h-4 w-4" />
         </IconButton>
         <IconButton onClick={toggleMute} aria-label="Mute">
-          {muted || volume === 0 ? (
-            <VolumeX className="h-4 w-4" />
-          ) : volume < 0.5 ? (
-            <Volume1 className="h-4 w-4" />
-          ) : (
-            <Volume2 className="h-4 w-4" />
-          )}
+          <IconSwap id={muted || volume === 0 ? "off" : volume < 0.5 ? "low" : "high"}>
+            {muted || volume === 0 ? (
+              <VolumeX className="h-4 w-4" />
+            ) : volume < 0.5 ? (
+              <Volume1 className="h-4 w-4" />
+            ) : (
+              <Volume2 className="h-4 w-4" />
+            )}
+          </IconSwap>
         </IconButton>
         <Slider
           className="w-28"

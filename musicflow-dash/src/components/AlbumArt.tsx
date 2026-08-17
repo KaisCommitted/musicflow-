@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Music2 } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { gradientFromString } from "@/lib/colors";
@@ -12,6 +13,13 @@ export function AlbumArt({
   className?: string;
   iconClassName?: string;
 }) {
+  // Resets whenever the artwork itself changes — covers both a fresh mount (a new row
+  // scrolling into a virtualized list) and an existing instance switching to a new
+  // song (the player bar/full-screen art), so every real image fades in rather than
+  // popping in the instant it's decoded.
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => setLoaded(false), [song?.artwork]);
+
   if (!song) {
     return (
       <div className={cn("grid place-items-center bg-muted", className)}>
@@ -25,7 +33,12 @@ export function AlbumArt({
         src={song.artwork}
         alt={`${song.album || song.title} cover art`}
         loading="lazy"
-        className={cn("object-cover", className)}
+        onLoad={() => setLoaded(true)}
+        className={cn(
+          "object-cover opacity-0 transition-opacity duration-300",
+          loaded && "opacity-100",
+          className,
+        )}
       />
     );
   }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import { type LibraryIssuesReport } from "@/lib/api";
 import { useLibrary } from "@/store/library";
@@ -40,46 +41,62 @@ export function LibraryIssuesPanel() {
   const deleteIssueFiles = useLibrary((s) => s.deleteIssueFiles);
   const [deleting, setDeleting] = useState(false);
 
-  if (!issues) return null;
-  const hasIssues = issues.duplicate_groups.length > 0 || issues.standalone_corrupt.length > 0;
-  if (!hasIssues) return null;
-
-  const { paths, mp3Count, bytes, lostSongs } = removalPlan(issues);
+  const hasIssues =
+    issues && (issues.duplicate_groups.length > 0 || issues.standalone_corrupt.length > 0);
+  const plan = hasIssues ? removalPlan(issues) : null;
 
   const confirmDelete = async () => {
-    if (paths.length === 0) return;
+    if (!plan || plan.paths.length === 0) return;
     setDeleting(true);
     try {
-      await deleteIssueFiles(paths);
+      await deleteIssueFiles(plan.paths);
     } finally {
       setDeleting(false);
     }
   };
 
   return (
-    <div className="surface flex flex-wrap items-center gap-4 px-5 py-4">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-        <div className="min-w-0">
-          <p className="text-sm font-medium">
-            {mp3Count} duplicate/corrupt file{mp3Count === 1 ? "" : "s"} found
-            {bytes > 0 && ` (${formatBytes(bytes)})`}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            The best-named, best-quality copy of each song is kept automatically.
-            {lostSongs > 0 &&
-              ` ${lostSongs} song${lostSongs === 1 ? "" : "s"} have no working copy at all and were left untouched.`}
-          </p>
-        </div>
-      </div>
-      <button
-        disabled={paths.length === 0 || deleting}
-        onClick={() => void confirmDelete()}
-        className="flex shrink-0 items-center gap-2 rounded-full bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground transition-transform hover:scale-105 disabled:pointer-events-none disabled:opacity-50"
-      >
-        {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-        Delete duplicates
-      </button>
-    </div>
+    <AnimatePresence>
+      {plan && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.25 }}
+          className="overflow-hidden"
+        >
+          <div className="surface flex flex-wrap items-center gap-4 px-5 py-4">
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  {plan.mp3Count} duplicate/corrupt file{plan.mp3Count === 1 ? "" : "s"} found
+                  {plan.bytes > 0 && ` (${formatBytes(plan.bytes)})`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  The best-named, best-quality copy of each song is kept automatically.
+                  {plan.lostSongs > 0 &&
+                    ` ${plan.lostSongs} song${plan.lostSongs === 1 ? "" : "s"} have no working copy at all and were left untouched.`}
+                </p>
+              </div>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              disabled={plan.paths.length === 0 || deleting}
+              onClick={() => void confirmDelete()}
+              className="flex shrink-0 items-center gap-2 rounded-full bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground disabled:pointer-events-none disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Delete duplicates
+            </motion.button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

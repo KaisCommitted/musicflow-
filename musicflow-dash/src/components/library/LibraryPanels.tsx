@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Disc3, Play, Plus, Trash2 } from "lucide-react";
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
@@ -25,12 +25,14 @@ export function BackButton({ label, onClick }: { label: string; onClick: () => v
 
 function PlayBigButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
+    <motion.button
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
       onClick={onClick}
-      className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105"
+      className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
     >
       <Play className="h-4 w-4" /> Play
-    </button>
+    </motion.button>
   );
 }
 
@@ -57,7 +59,11 @@ export function AlbumsView({ songs }: { songs: Song[] }) {
       <div>
         <BackButton label="All albums" onClick={back} />
         <div className="mb-6 flex items-end gap-6">
-          <AlbumArt song={first ?? null} className="h-40 w-40 rounded-2xl shadow-elevated" iconClassName="h-8 w-8" />
+          <AlbumArt
+            song={first ?? null}
+            className="h-40 w-40 rounded-2xl shadow-elevated"
+            iconClassName="h-8 w-8"
+          />
           <div className="pb-2">
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Album</p>
             <h2 className="mt-1 text-3xl font-bold">{album}</h2>
@@ -84,6 +90,7 @@ export function AlbumsView({ songs }: { songs: Song[] }) {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: Math.min(i * 0.02, 0.3) }}
+          whileTap={{ scale: 0.97 }}
           onClick={() => openAlbum(name)}
           className="surface group overflow-hidden p-3 text-left transition-all hover:-translate-y-1 hover:shadow-elevated"
         >
@@ -160,9 +167,13 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
 
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-5">
-      {artists.map(([name, tracks]) => (
-        <button
+      {artists.map(([name, tracks], i) => (
+        <motion.button
           key={name}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: Math.min(i * 0.02, 0.3) }}
+          whileTap={{ scale: 0.97 }}
           onClick={() => openArtist(name)}
           className="surface flex flex-col items-center gap-3 p-5 transition-all hover:-translate-y-1 hover:shadow-elevated"
         >
@@ -174,7 +185,7 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
           />
           <span className="w-full truncate text-center text-sm font-semibold">{name}</span>
           <span className="text-xs text-muted-foreground">{tracks.length} tracks</span>
-        </button>
+        </motion.button>
       ))}
     </div>
   );
@@ -183,8 +194,14 @@ export function ArtistsView({ songs }: { songs: Song[] }) {
 /* -------------------------------- Playlists -------------------------------- */
 
 export function PlaylistsView({ songs }: { songs: Song[] }) {
-  const { playlist, openPlaylist, back, selectedPlaylists, toggleSelectedPlaylist, clearSelection } =
-    useView();
+  const {
+    playlist,
+    openPlaylist,
+    back,
+    selectedPlaylists,
+    toggleSelectedPlaylist,
+    clearSelection,
+  } = useView();
   const { playlists, removePlaylist } = useLibrary();
   const playQueue = usePlayer((s) => s.playQueue);
   const [createOpen, setCreateOpen] = useState(false);
@@ -261,12 +278,15 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5">
-        {playlists.map((p) => {
+        {playlists.map((p, i) => {
           const selected = selectedPlaylists.includes(p.name);
           const tracks = songs.filter((s) => p.songs.includes(s.path));
           return (
-            <div
+            <motion.div
               key={p.name}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i * 0.02, 0.3) }}
               className={cn(
                 "surface group relative p-4 transition-all hover:-translate-y-1 hover:shadow-elevated",
                 selected && "border-primary",
@@ -292,36 +312,39 @@ export function PlaylistsView({ songs }: { songs: Song[] }) {
                   iconClassName="h-8 w-8"
                 />
                 <span className="block truncate text-sm font-semibold">{p.name}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {p.songs.length} tracks
-                </span>
+                <span className="block text-xs text-muted-foreground">{p.songs.length} tracks</span>
               </button>
-            </div>
+            </motion.div>
           );
         })}
       </div>
 
-      {selectedPlaylists.length >= 2 && (
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="pointer-events-none fixed inset-x-0 bottom-32 z-40 flex justify-center"
-        >
-          <button
-            onClick={() =>
-              combined.length &&
-              playQueue(combined, 0, {
-                label: selectedPlaylists.join(" + "),
-                kind: "playlist",
-              })
-            }
-            className="pointer-events-auto flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105"
+      <AnimatePresence>
+        {selectedPlaylists.length >= 2 && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ type: "spring", stiffness: 400, damping: 32 }}
+            className="pointer-events-none fixed inset-x-0 bottom-32 z-40 flex justify-center"
           >
-            <Play className="h-4 w-4" /> Play Selected · {combined.length} tracks
-          </button>
-        </motion.div>
-      )}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() =>
+                combined.length &&
+                playQueue(combined, 0, {
+                  label: selectedPlaylists.join(" + "),
+                  kind: "playlist",
+                })
+              }
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow"
+            >
+              <Play className="h-4 w-4" /> Play Selected · {combined.length} tracks
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-

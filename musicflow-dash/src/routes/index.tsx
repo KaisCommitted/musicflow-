@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "framer-motion";
 import { Disc3, ListMusic, Music4, Play, Search, Shuffle, User } from "lucide-react";
 import { SongTable } from "@/components/SongTable";
 import { AlbumsView, ArtistsView, PlaylistsView } from "@/components/library/LibraryPanels";
@@ -130,31 +131,51 @@ function LibraryPage() {
                     key={key}
                     onClick={() => setTab(key)}
                     className={cn(
-                      "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-all hover:text-foreground",
-                      tab === key && "bg-primary/15 text-primary",
+                      "relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                      tab === key && "text-primary",
                     )}
                   >
-                    <Icon className="h-4 w-4" /> {label}
+                    {tab === key && (
+                      <motion.span
+                        layoutId="library-tab-pill"
+                        className="absolute inset-0 rounded-full bg-primary/15"
+                        transition={{ type: "spring", stiffness: 400, damping: 34 }}
+                      />
+                    )}
+                    <Icon className="relative z-10 h-4 w-4" />
+                    <span className="relative z-10">{label}</span>
                   </button>
                 ))}
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={() =>
                     songs.length && playQueue(songs, 0, { label: "All Songs", kind: "all" })
                   }
-                  className="ml-auto flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105"
+                  className="ml-auto flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow"
                 >
                   <Play className="h-3.5 w-3.5" /> Play all
-                </button>
+                </motion.button>
               </div>
 
               {loading && <p className="text-sm text-muted-foreground">Scanning library…</p>}
 
-              {tab === "songs" && (
-                <SongTable songs={songs} context={{ label: "All Songs", kind: "all" }} />
-              )}
-              {tab === "albums" && <AlbumsView songs={songs} />}
-              {tab === "artists" && <ArtistsView songs={songs} />}
-              {tab === "playlists" && <PlaylistsView songs={songs} />}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={tab}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {tab === "songs" && (
+                    <SongTable songs={songs} context={{ label: "All Songs", kind: "all" }} />
+                  )}
+                  {tab === "albums" && <AlbumsView songs={songs} />}
+                  {tab === "artists" && <ArtistsView songs={songs} />}
+                  {tab === "playlists" && <PlaylistsView songs={songs} />}
+                </motion.div>
+              </AnimatePresence>
             </>
           )}
         </ScrollContainerContext.Provider>

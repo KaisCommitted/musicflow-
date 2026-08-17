@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { FolderSearch, Loader2 } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { useLibrary } from "@/store/library";
@@ -25,10 +26,20 @@ export function FolderSetupGate() {
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-background px-4 text-foreground">
-      <div className="w-full max-w-md text-center">
-        <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-glow">
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="w-full max-w-md text-center"
+      >
+        <motion.span
+          initial={{ scale: 0.6, rotate: -8 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+          className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-glow"
+        >
           <FolderSearch className="h-7 w-7" />
-        </span>
+        </motion.span>
         <h1 className="mt-5 text-xl font-bold">
           {isMissing ? "Music folder not found" : "Welcome to Musicflow"}
         </h1>
@@ -39,18 +50,24 @@ export function FolderSetupGate() {
         </p>
 
         <div className="mt-6 flex justify-center">
-          <FolderPicker value={draft} onChange={setDraft} className="flex w-full items-center gap-2" />
+          <FolderPicker
+            value={draft}
+            onChange={setDraft}
+            className="flex w-full items-center gap-2"
+          />
         </div>
 
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => void handleConfirm()}
           disabled={!draft || loading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow disabled:opacity-40"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {loading ? "Checking…" : "Continue"}
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
     </div>
   );
 }

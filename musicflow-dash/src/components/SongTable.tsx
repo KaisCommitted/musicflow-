@@ -1,9 +1,22 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, Play, Volume2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Heart,
+  ListEnd,
+  Play,
+  Plus,
+  Trash2,
+  Volume2,
+  X,
+} from "lucide-react";
 import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
-import { LikeButton } from "@/components/LikeButton";
+import { LikeButton, toggleLikeMany } from "@/components/LikeButton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useLibrary } from "@/store/library";
 import { usePlayer, type PlayContext } from "@/store/player";
 import { useSongMenu } from "@/store/menu";
@@ -41,6 +54,150 @@ export function PlaylistTags({ song }: { song: Song }) {
   );
 }
 
+/** Floating pill for a multi-select — mirrors PlaylistsView's "Play Selected" bar. */
+function BulkActionsBar({
+  selectedSongs,
+  playlistName,
+  onClear,
+}: {
+  selectedSongs: Song[];
+  playlistName: string | null;
+  onClear: () => void;
+}) {
+  const playQueue = usePlayer((s) => s.playQueue);
+  const addToQueue = usePlayer((s) => s.addToQueue);
+  const playlists = useLibrary((s) => s.playlists);
+  const addPlaylist = useLibrary((s) => s.addPlaylist);
+  const addSongsToPlaylist = useLibrary((s) => s.addSongsToPlaylist);
+  const removeSongsFromPlaylist = useLibrary((s) => s.removeSongsFromPlaylist);
+  const deleteSong = useLibrary((s) => s.deleteSong);
+  const [deleting, setDeleting] = useState(false);
+  const paths = useMemo(() => selectedSongs.map((s) => s.path), [selectedSongs]);
+  const allLiked =
+    paths.length > 0 &&
+    paths.every((p) => playlists.find((pl) => pl.name === "Favorites")?.songs.includes(p));
+
+  const bulkDelete = async () => {
+    const ok = window.confirm(
+      `Permanently delete ${selectedSongs.length} song${selectedSongs.length === 1 ? "" : "s"}? This removes the files, their metadata, and their lyrics from disk — it can't be undone.`,
+    );
+    if (!ok) return;
+    setDeleting(true);
+    // Sequential, not Promise.all — each call replaces the store's whole `songs` array with
+    // the backend's post-delete list, so running them in parallel would race and could drop
+    // updates from all but the last response to land.
+    for (const p of paths) await deleteSong(p);
+    setDeleting(false);
+    onClear();
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 24 }}
+      transition={{ type: "spring", stiffness: 400, damping: 32 }}
+      className="pointer-events-none fixed inset-x-0 bottom-32 z-40 flex justify-center"
+    >
+      <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card px-2 py-2 shadow-elevated">
+        <span className="px-3 text-xs font-medium text-muted-foreground">
+          {selectedSongs.length} selected
+        </span>
+        <button
+          onClick={() => selectedSongs.length && playQueue(selectedSongs, 0, { label: "Selection", kind: "all" })}
+          aria-label="Play selection"
+          className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Play className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => addToQueue(selectedSongs)}
+          aria-label="Add selection to queue"
+          className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <ListEnd className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => toggleLikeMany(paths)}
+          aria-label={allLiked ? "Remove selection from Favorites" : "Add selection to Favorites"}
+          className={cn(
+            "grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-accent",
+            allLiked ? "text-primary" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Heart className={cn("h-4 w-4", allLiked && "fill-current")} />
+        </button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              aria-label="Add selection to playlist"
+              className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" className="w-56">
+            {playlists.map((p) => {
+              const allIn = paths.every((path) => p.songs.includes(path));
+              return (
+                <button
+                  key={p.name}
+                  onClick={() => addSongsToPlaylist(p.name, paths)}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                >
+                  <Check className={cn("h-3.5 w-3.5 text-primary", !allIn && "invisible")} />
+                  {p.name}
+                </button>
+              );
+            })}
+            {playlists.length > 0 && <div className="my-1 h-px bg-border" />}
+            <button
+              onClick={() => {
+                const name = window.prompt("New playlist name");
+                if (name) {
+                  addPlaylist(name);
+                  addSongsToPlaylist(name, paths);
+                }
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+            >
+              <Plus className="h-3.5 w-3.5" /> Create New…
+            </button>
+          </PopoverContent>
+        </Popover>
+        {playlistName && (
+          <button
+            onClick={() => {
+              removeSongsFromPlaylist(playlistName, paths);
+              onClear();
+            }}
+            aria-label={`Remove selection from ${playlistName}`}
+            className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        <button
+          onClick={() => void bulkDelete()}
+          disabled={deleting}
+          aria-label="Delete selection"
+          className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-50"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+        <div className="mx-1 h-5 w-px bg-border" />
+        <button
+          onClick={onClear}
+          aria-label="Clear selection"
+          className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 export function SongTable({
   songs,
   context,
@@ -57,6 +214,12 @@ export function SongTable({
   const openMenu = useSongMenu((s) => s.open);
   const current = usePlayer((s) => s.current());
   const isPlaying = usePlayer((s) => s.isPlaying);
+
+  // Multi-select — local to this table instance (each tab/album/playlist mounts its own
+  // SongTable), so switching views naturally clears it instead of needing its own reset logic.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const anchorIndex = useRef<number | null>(null);
+  const selectionActive = selected.size > 0;
 
   // Only the rows scrolled into view get mounted — with 900+ songs, rendering every
   // row unconditionally is what makes the library heavy to paint (e.g. noticeably
@@ -82,6 +245,25 @@ export function SongTable({
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => ({ key, dir: s.key === key && s.dir === 1 ? -1 : 1 }));
+
+  /** Plain click toggles just this row (and becomes the range anchor). Shift+click selects
+   * every row between the anchor and here, matching Explorer/Gmail-style multi-select. */
+  const toggleSelect = (i: number, shiftKey: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (shiftKey && anchorIndex.current != null) {
+        const [lo, hi] =
+          anchorIndex.current < i ? [anchorIndex.current, i] : [i, anchorIndex.current];
+        for (let k = lo; k <= hi; k++) next.add(sorted[k]!.path);
+        return next;
+      }
+      const path = sorted[i]!.path;
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+    if (!shiftKey) anchorIndex.current = i;
+  };
 
   // Re-measure how far the list sits from the top of the scroll container whenever
   // the page around it changes size — switching tabs, drilling into an album, the
@@ -145,6 +327,12 @@ export function SongTable({
               key={virtualRow.key}
               data-index={i}
               ref={rowVirtualizer.measureElement}
+              onClick={(e) => {
+                // Ctrl/Cmd or Shift click multi-selects like a file manager — the entry point
+                // into selection mode; once any row is selected, a checkbox appears on hover
+                // for mouse-only extension (see the index cell above).
+                if (e.ctrlKey || e.metaKey || e.shiftKey) toggleSelect(i, e.shiftKey);
+              }}
               onDoubleClick={() => playQueue(sorted, i, context)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -163,23 +351,54 @@ export function SongTable({
               }}
               className={cn(
                 "group grid cursor-default grid-cols-[40px_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_70px_44px] items-center gap-4 px-4 py-2 hover-row absolute top-0 left-0 w-full",
-                active && "bg-primary/10",
+                (active || selected.has(song.path)) && "bg-primary/10",
               )}
               style={{
                 transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
               }}
             >
               <span className="grid h-8 w-8 place-items-center text-xs tabular-nums text-muted-foreground">
-                <button
-                  onClick={() => playQueue(sorted, i, context)}
-                  aria-label={`Play ${song.title}`}
-                  className="hidden group-hover:block"
-                >
-                  <Play className="h-4 w-4 text-primary" />
-                </button>
-                <span className="group-hover:hidden">
-                  {active && isPlaying ? <Volume2 className="h-4 w-4 text-primary" /> : i + 1}
-                </span>
+                {selected.has(song.path) ? (
+                  <input
+                    type="checkbox"
+                    checked
+                    onChange={() => {}}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelect(i, e.shiftKey);
+                    }}
+                    aria-label={`Deselect ${song.title}`}
+                    className="h-4 w-4 cursor-pointer accent-primary"
+                  />
+                ) : selectionActive ? (
+                  <>
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      onChange={() => {}}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(i, e.shiftKey);
+                      }}
+                      aria-label={`Select ${song.title}`}
+                      className="hidden h-4 w-4 cursor-pointer accent-primary group-hover:block"
+                    />
+                    <span className="group-hover:hidden">{i + 1}</span>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => playQueue(sorted, i, context)}
+                      aria-label={`Play ${song.title}`}
+                      className="hidden group-hover:block"
+                    >
+                      <Play className="h-4 w-4 text-primary" />
+                    </button>
+                    <span className="group-hover:hidden">
+                      {active && isPlaying ? <Volume2 className="h-4 w-4 text-primary" /> : i + 1}
+                    </span>
+                  </>
+                )}
               </span>
               <div className="flex min-w-0 items-center gap-3">
                 <AlbumArt song={song} className="h-9 w-9 shrink-0 rounded-md" />
@@ -200,6 +419,15 @@ export function SongTable({
           );
         })}
       </ul>
+      <AnimatePresence>
+        {selectionActive && (
+          <BulkActionsBar
+            selectedSongs={sorted.filter((s) => selected.has(s.path))}
+            playlistName={playlistName}
+            onClear={() => setSelected(new Set())}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

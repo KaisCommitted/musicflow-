@@ -59,6 +59,10 @@ interface LibraryState {
   removePlaylist: (name: string) => void;
   addSongToPlaylist: (name: string, songPath: string) => void;
   removeSongFromPlaylist: (name: string, songPath: string) => void;
+  /** Same as the singular versions, but one rewrite of the .m3u8 for the whole batch instead
+   * of one per song — what a bulk-select "add N songs to a playlist" action should use. */
+  addSongsToPlaylist: (name: string, songPaths: string[]) => void;
+  removeSongsFromPlaylist: (name: string, songPaths: string[]) => void;
   playlistsForSong: (songPath: string) => string[];
   /** Creates one playlist pre-filled with the given songs (the "pick songs" UI). */
   createPlaylistWithSongs: (name: string, songPaths: string[]) => Promise<CreatePlaylistResult>;
@@ -225,6 +229,31 @@ export const useLibrary = create<LibraryState>()((set, get) => ({
       set((s) => ({
         playlists: s.playlists.map((p) => (p.name === name ? target : p)),
       }));
+    });
+  },
+
+  addSongsToPlaylist: (name, songPaths) => {
+    const folder = get().settings.musicFolder;
+    const target = get().playlists.find((p) => p.name === name);
+    if (!folder || !target) return;
+    const toAdd = songPaths.filter((p) => !target.songs.includes(p));
+    if (!toAdd.length) return;
+    const songs = [...target.songs, ...toAdd];
+    set((s) => ({ playlists: s.playlists.map((p) => (p.name === name ? { ...p, songs } : p)) }));
+    void apiUpdatePlaylist(folder, name, songs).catch(() => {
+      set((s) => ({ playlists: s.playlists.map((p) => (p.name === name ? target : p)) }));
+    });
+  },
+
+  removeSongsFromPlaylist: (name, songPaths) => {
+    const folder = get().settings.musicFolder;
+    const target = get().playlists.find((p) => p.name === name);
+    if (!folder || !target) return;
+    const remove = new Set(songPaths);
+    const songs = target.songs.filter((x) => !remove.has(x));
+    set((s) => ({ playlists: s.playlists.map((p) => (p.name === name ? { ...p, songs } : p)) }));
+    void apiUpdatePlaylist(folder, name, songs).catch(() => {
+      set((s) => ({ playlists: s.playlists.map((p) => (p.name === name ? target : p)) }));
     });
   },
 

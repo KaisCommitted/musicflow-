@@ -29,6 +29,22 @@ export function toggleLike(songPath: string) {
   addSongToPlaylist(FAVORITES_PLAYLIST, songPath);
 }
 
+/** Bulk-select version — if every song passed in is already liked, unlikes them all;
+ * otherwise likes whichever aren't yet, in one playlist rewrite instead of one per song. */
+export function toggleLikeMany(songPaths: string[]) {
+  const { playlists, addPlaylist, addSongsToPlaylist, removeSongsFromPlaylist } =
+    useLibrary.getState();
+  const favorites = playlists.find((p) => p.name === FAVORITES_PLAYLIST);
+  const likedSet = new Set(favorites?.songs ?? []);
+  const allLiked = songPaths.length > 0 && songPaths.every((p) => likedSet.has(p));
+  if (allLiked) {
+    removeSongsFromPlaylist(FAVORITES_PLAYLIST, songPaths);
+    return;
+  }
+  if (!favorites) addPlaylist(FAVORITES_PLAYLIST);
+  addSongsToPlaylist(FAVORITES_PLAYLIST, songPaths);
+}
+
 export function LikeButton({
   songPath,
   size = "md",

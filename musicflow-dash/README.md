@@ -1,4 +1,4 @@
-# Musicflow Flow
+# Musicflow
 
 **Build a React + TypeScript frontend for "Musicflow", a local music player with YouTube download capabilities. Use Vite as the build tool. The app is served by a Python/Flask backend — you only need to build the frontend.**
 
@@ -186,23 +186,9 @@ The backend provides these endpoints — use them as-is:
 
 - No Electron/Tauri shell — this runs in a browser served by Flask
 
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/9a5fa43c-f6aa-4af7-8f98-f947c16d19ca).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
 npm i
 npm run dev
 ```

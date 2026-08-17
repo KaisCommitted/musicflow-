@@ -7,9 +7,11 @@ import { SongContextMenu } from "@/components/SongContextMenu";
 import { FolderSetupGate } from "@/components/FolderSetupGate";
 import { useLibrary } from "@/store/library";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { applyUiScale } from "@/lib/uiScale";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const theme = useLibrary((s) => s.settings.theme);
+  const uiScale = useLibrary((s) => s.settings.uiScale);
   const musicFolder = useLibrary((s) => s.settings.musicFolder);
   const error = useLibrary((s) => s.error);
   const loadSettings = useLibrary((s) => s.loadSettings);
@@ -31,6 +33,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.classList.toggle("light", theme === "light");
   }, [theme]);
+
+  useEffect(() => {
+    applyUiScale(uiScale);
+  }, [uiScale]);
 
   if (!settingsLoaded) {
     return <div className="h-screen w-full bg-background" />;

@@ -13,6 +13,7 @@ import {
   type Playlist,
   type Song,
 } from "@/lib/api";
+import { isUiScale, type UiScale } from "@/lib/uiScale";
 
 /** Result of trying to create one playlist — used by both creation modes to report
  * per-playlist success/failure (a text paste can define several at once). */
@@ -25,6 +26,7 @@ export interface CreatePlaylistResult {
 export interface Settings {
   musicFolder: string;
   theme: "dark" | "light";
+  uiScale: UiScale;
   crossfade: number;
   showPlaylistTags: boolean;
   autoScanOnStart: boolean;
@@ -70,6 +72,7 @@ interface LibraryState {
 const defaultSettings: Settings = {
   musicFolder: "",
   theme: "dark",
+  uiScale: "small",
   crossfade: 0,
   showPlaylistTags: true,
   autoScanOnStart: true,
@@ -82,6 +85,7 @@ function parseSettings(raw: Record<string, string>): Settings {
   return {
     musicFolder: raw["musicFolder"] ?? "",
     theme: (raw["theme"] as "dark" | "light") ?? "dark",
+    uiScale: isUiScale(raw["uiScale"] ?? "") ? (raw["uiScale"] as UiScale) : "small",
     crossfade: Number(raw["crossfade"] ?? 0),
     showPlaylistTags: raw["showPlaylistTags"] !== "false",
     autoScanOnStart: raw["autoScanOnStart"] !== "false",
@@ -95,6 +99,7 @@ function serializeSettings(s: Settings): Record<string, string> {
   return {
     musicFolder: s.musicFolder,
     theme: s.theme,
+    uiScale: s.uiScale,
     crossfade: String(s.crossfade),
     showPlaylistTags: String(s.showPlaylistTags),
     autoScanOnStart: String(s.autoScanOnStart),

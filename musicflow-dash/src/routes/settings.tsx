@@ -12,6 +12,7 @@ import {
   setCapturingKeybind,
   type KeybindActionId,
 } from "@/lib/keybinds";
+import { UI_SCALES } from "@/lib/uiScale";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
@@ -157,6 +158,30 @@ function SettingsPage() {
                 {t}
               </button>
             ))}
+          </div>
+        </Row>
+
+        <Row title="UI size" description="Scales text and UI elements throughout the app.">
+          <div className="w-56">
+            <input
+              type="range"
+              min={0}
+              max={UI_SCALES.length - 1}
+              step={1}
+              value={UI_SCALES.findIndex((s) => s.value === settings.uiScale)}
+              onChange={(e) => set("uiScale", UI_SCALES[Number(e.target.value)]!.value)}
+              className="w-full accent-[var(--color-primary)]"
+            />
+            <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+              {UI_SCALES.map((s) => (
+                <span
+                  key={s.value}
+                  className={cn(s.value === settings.uiScale && "font-semibold text-primary")}
+                >
+                  {s.label}
+                </span>
+              ))}
+            </div>
           </div>
         </Row>
 

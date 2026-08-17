@@ -126,7 +126,9 @@ export function FullScreenPlayer() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           transition={{ type: "spring", stiffness: 260, damping: 30 }}
-          className="fixed inset-0 z-50 overflow-hidden"
+          // top-9 (not inset-0) so it starts below the Electron title bar (TitleBar.tsx, h-9)
+          // instead of covering it — same 36px whether or not that bar is actually rendered.
+          className="fixed inset-x-0 bottom-0 top-9 z-50 overflow-hidden"
         >
           <div className="absolute inset-0 scale-110 blur-3xl brightness-[0.35] saturate-150">
             {song.artwork ? (

@@ -5,6 +5,7 @@ import { QueuePanel } from "@/components/QueuePanel";
 import { FullScreenPlayer } from "@/components/FullScreenPlayer";
 import { SongContextMenu } from "@/components/SongContextMenu";
 import { FolderSetupGate } from "@/components/FolderSetupGate";
+import { TitleBar } from "@/components/TitleBar";
 import { useLibrary } from "@/store/library";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDiscordPresence } from "@/hooks/useDiscordPresence";
@@ -46,23 +47,37 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [uiScale]);
 
   if (!settingsLoaded) {
-    return <div className="h-screen w-full bg-background" />;
+    return (
+      <div className="flex h-screen w-full flex-col bg-background">
+        <TitleBar />
+      </div>
+    );
   }
 
   if (!musicFolder || error) {
-    return <FolderSetupGate />;
+    return (
+      <div className="flex h-screen w-full flex-col bg-background">
+        <TitleBar />
+        <div className="min-h-0 flex-1">
+          <FolderSetupGate />
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
-        <PlayerBar />
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+          <PlayerBar />
+        </div>
+        <QueuePanel />
+        <FullScreenPlayer />
+        <SongContextMenu />
       </div>
-      <QueuePanel />
-      <FullScreenPlayer />
-      <SongContextMenu />
     </div>
   );
 }

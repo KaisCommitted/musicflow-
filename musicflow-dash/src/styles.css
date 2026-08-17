@@ -171,3 +171,13 @@
 @utility glow-ring {
   box-shadow: 0 0 60px -12px color-mix(in oklab, var(--dynamic) 70%, transparent);
 }
+
+/* Electron's custom title bar (frameless window, see TitleBar.tsx) — the bar itself is a drag
+ * handle, its buttons opt back out so clicks land on them instead of dragging the window. */
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}

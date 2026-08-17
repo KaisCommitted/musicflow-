@@ -25,7 +25,7 @@ export function FolderSetupGate() {
   };
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-background px-4 text-foreground">
+    <div className="flex h-full w-full items-center justify-center bg-background px-4 text-foreground">
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

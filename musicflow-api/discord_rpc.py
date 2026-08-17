@@ -21,10 +21,16 @@ log = logging.getLogger("musicflow")
 # Registered at discord.com/developers/applications — public identifier, safe to ship as-is.
 CLIENT_ID = "1538934409896398948"
 
+# Key of the Rich Presence art asset uploaded at discord.com/developers/applications/<id>/
+# rich-presence/assets — not a file path, Discord serves the image from its own CDN once
+# an asset with this exact key exists on the app.
+LARGE_IMAGE_KEY = "logo"
+
 try:
-    from pypresence import Presence
+    from pypresence import ActivityType, Presence
 except ImportError:
     Presence = None
+    ActivityType = None
 
 _rpc = None
 
@@ -60,9 +66,16 @@ def update(title: str, artist: str, is_playing: bool, position: float, duration:
         return
     try:
         now = time.time()
+        details = f"Listening to {title}"[:128] if title else "Musicflow"
+        state = f"by {artist}" if artist else "Unknown artist"
         kwargs = {
-            "details": (title or "Musicflow")[:128],
-            "state": (artist or "Unknown artist")[:128],
+            # Without this, Discord defaults to "Playing" — the game-controller icon and verb.
+            # LISTENING gets Musicflow the same headphone-note icon/framing Spotify uses.
+            "activity_type": ActivityType.LISTENING,
+            "details": details,
+            "state": state[:128],
+            "large_image": LARGE_IMAGE_KEY,
+            "large_text": "Musicflow",
         }
         if is_playing:
             kwargs["start"] = int(now - position)

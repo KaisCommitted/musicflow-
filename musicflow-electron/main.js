@@ -33,6 +33,18 @@ function getFreePort() {
   });
 }
 
+/** `build/` is only packaged as far as electron-builder's own `win.icon` (it bakes the icon
+ * into the compiled .exe's resources at build time) — it was never actually included in the
+ * app bundle for main.js to read at runtime, so this path resolved to a file that didn't
+ * exist inside app.asar. BrowserWindow's `icon` option failed silently on that; `new Tray()`
+ * does not — it throws, which is what actually surfaced this. Fixed by shipping the icon as
+ * a real extraResource (see package.json) instead of reading it from inside the asar. */
+function iconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "icon.ico")
+    : path.join(__dirname, "build", "icon.ico");
+}
+
 function backendCommand() {
   if (app.isPackaged) {
     const exe = path.join(process.resourcesPath, "backend", "musicflow-backend.exe");
@@ -58,6 +70,10 @@ function log(...args) {
   }
   console.log(...args);
 }
+
+// A crash here would otherwise be totally silent (no console — this is a windowed app — and
+// no dialog unless we're the ones showing it), which cost real time to diagnose once already.
+process.on("uncaughtException", (err) => log("UNCAUGHT EXCEPTION:", err.stack || err.message));
 
 function waitForBackend(port, timeoutMs = 30000) {
   const start = Date.now();
@@ -176,7 +192,7 @@ function createWindow() {
     minWidth: 600,
     minHeight: 400,
     title: "Musicflow",
-    icon: path.join(__dirname, "build", "icon.ico"),
+    icon: iconPath(),
     // No native title bar — the app renders its own (TitleBar.tsx) with a drag region and
     // its own minimize/maximize/close buttons, wired up over IPC below.
     frame: false,
@@ -203,9 +219,11 @@ function createWindow() {
 
   // Close (the X button, via TitleBar.tsx) hides to the tray instead of quitting — music keeps
   // playing, same as most desktop players. Only an actual quit (tray menu, OS shutdown, ...)
-  // lets the window really close; isQuitting is set by the before-quit handler below.
+  // lets the window really close; isQuitting is set by the before-quit handler below. Also
+  // falls through to a real close if the tray failed to create (best-effort, see
+  // app.whenReady below) — hiding with no tray icon would leave no way to get the window back.
   mainWindow.on("close", (event) => {
-    if (isQuitting) return;
+    if (isQuitting || !tray) return;
     event.preventDefault();
     mainWindow.hide();
   });
@@ -218,7 +236,7 @@ function createWindow() {
 /** Windows tray icon — the only way back once the window's been hidden, and the "Quit" item
  * is the only way to actually exit now that closing the window just hides it. */
 function createTray() {
-  tray = new Tray(path.join(__dirname, "build", "icon.ico"));
+  tray = new Tray(iconPath());
   tray.setToolTip("Musicflow");
 
   const showWindow = () => {
@@ -258,8 +276,12 @@ ipcMain.on("window:toggle-maximize", () => {
 ipcMain.on("window:close", () => mainWindow?.close());
 ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
 
+// This is silent by design everywhere else Electron apps do it, but that silence cost real
+// debugging time once already (a leftover process from a previous run/crash holding the lock
+// looks identical to "won't launch at all" with nothing in electron.log to explain why).
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
+  log("Another instance already holds the lock — focusing it and quitting this one.");
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -275,7 +297,13 @@ if (!gotLock) {
     try {
       await startBackend();
       createWindow();
-      createTray();
+      // Best-effort: the tray is a nice-to-have, not something that should take the whole app
+      // down if icon loading ever breaks again on some machine — close (X) just quits instead.
+      try {
+        createTray();
+      } catch (err) {
+        log("Tray creation failed (continuing without it):", err.message);
+      }
     } catch (err) {
       log("Startup failed:", err.message);
       dialog.showErrorBox(

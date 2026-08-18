@@ -38,7 +38,11 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX-compressed executables are a well-documented trigger for antivirus false positives
+    # (packing is also how a lot of actual malware evades signature detection, so heuristics
+    # are trigger-happy about it) — not worth it for an unsigned installer that's already
+    # asking users to trust an "unknown publisher" SmartScreen prompt.
+    upx=False,
     # False: this process is spawned hidden by Electron, which pipes its stdout/stderr for
     # logging — a console=True build would flash a visible terminal window on every launch.
     console=False,
@@ -54,7 +58,11 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    # UPX-compressed executables are a well-documented trigger for antivirus false positives
+    # (packing is also how a lot of actual malware evades signature detection, so heuristics
+    # are trigger-happy about it) — not worth it for an unsigned installer that's already
+    # asking users to trust an "unknown publisher" SmartScreen prompt.
+    upx=False,
     upx_exclude=[],
     name='musicflow-backend',
 )

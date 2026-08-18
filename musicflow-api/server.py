@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
 from PIL import Image
-from main import find_ffmpeg, find_deno, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, find_deno, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, SUPPORTED_COOKIE_BROWSERS, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
 import scrobbling
@@ -76,7 +76,7 @@ class ProgressHook:
             self.item["progress"] = 100
 
 
-def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, existing_files: set[str], job: dict, folder: str, files_lock: threading.Lock = None):
+def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, cookies_path: str | None, existing_files: set[str], job: dict, folder: str, files_lock: threading.Lock = None):
     query = item["query"]
 
     # Step 1: Search
@@ -188,6 +188,8 @@ def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, ex
         ydl_opts["ffmpeg_location"] = ffmpeg_path
     if deno_path:
         ydl_opts["js_runtimes"] = {"deno": {"path": deno_path}}
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -318,6 +320,7 @@ def process_job(job_id: str):
     folder = job["folder"]
     ffmpeg_path = find_ffmpeg()
     deno_path = find_deno()
+    cookies_path = find_youtube_cookies()
     log.info("[job %s] Starting download job (%d songs)", job_id, len(job["items"]))
     _prevent_sleep()
     existing_files = {f.lower() for f in os.listdir(folder) if f.lower().endswith(".mp3")}
@@ -342,7 +345,7 @@ def process_job(job_id: str):
             item["error"] = "Cancelled"
             return
         throttle()
-        process_query(item, ffmpeg_path, deno_path, existing_files, job, folder, files_lock)
+        process_query(item, ffmpeg_path, deno_path, cookies_path, existing_files, job, folder, files_lock)
         if item["status"] in ("done", "skipped"):
             with files_lock:
                 done_counter["count"] += 1
@@ -395,6 +398,7 @@ def process_job(job_id: str):
         blocked_signal = bool(to_process) and all(
             i["status"] == "error" and "403" in (i.get("error") or "") for i in to_process
         )
+        job["likely_blocked"] = blocked_signal
         if blocked_signal:
             log.info(
                 "[job %s] All %d songs failed with 403 this cycle — likely blocked, backing off longer",
@@ -559,6 +563,7 @@ def job_status(job_id: str):
         "errors": errors if finished else 0,
         "cancelled": cancelled, "active": active, "pending": pending,
         "finished": finished, "paused": paused, "recent": recent,
+        "likelyBlocked": job.get("likely_blocked", False),
     })
 
 
@@ -2031,6 +2036,49 @@ def listenbrainz_validate():
 def listenbrainz_disconnect():
     db.set_setting("listenbrainzToken", "")
     db.set_setting("listenbrainzUsername", "")
+    return jsonify({"ok": True})
+
+
+# ── YouTube login (cookies) ──
+# YouTube increasingly blocks anonymous/automated-looking traffic outright ("Sign in to
+# confirm you're not a bot") — a logged-in session avoids that. Cookies are exported once
+# from a real browser to a static file (see setup_youtube_cookies in main.py) rather than
+# read live from the browser on every download, so downloads never require that browser to
+# be closed. The tradeoff: YouTube rotates session cookies every few days, so this needs
+# occasional reconnecting — the frontend surfaces that via the "likely blocked" job signal
+# rather than a timer, so it only asks when it's actually probably needed.
+
+@app.route("/api/youtube-cookies/browsers")
+def youtube_cookies_browsers():
+    return jsonify({"browsers": SUPPORTED_COOKIE_BROWSERS})
+
+
+@app.route("/api/youtube-cookies/status")
+def youtube_cookies_status():
+    configured = find_youtube_cookies() is not None
+    return jsonify({
+        "configured": configured,
+        "browser": db.get_setting("youtubeCookiesBrowser", "") if configured else "",
+    })
+
+
+@app.route("/api/youtube-cookies/setup", methods=["POST"])
+def youtube_cookies_setup():
+    data = request.get_json() or {}
+    browser = str(data.get("browser", "")).strip().lower()
+    if not browser:
+        return jsonify({"error": "Missing browser"}), 400
+    result = setup_youtube_cookies(browser)
+    if "error" in result:
+        return jsonify(result), 400
+    db.set_setting("youtubeCookiesBrowser", browser)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/youtube-cookies/disconnect", methods=["POST"])
+def youtube_cookies_disconnect():
+    clear_youtube_cookies()
+    db.set_setting("youtubeCookiesBrowser", "")
     return jsonify({"ok": True})
 
 

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock,
   Loader2,
+  LogIn,
   Pause,
   Play,
   RotateCcw,
@@ -21,8 +22,11 @@ import {
   ARTWORK_SIZES,
   getHistory,
   getHistoryDetail,
+  getYoutubeCookieBrowsers,
+  getYoutubeCookieStatus,
   jobArtworkUrl,
   retryHistoryItem,
+  setupYoutubeCookies,
   withArtworkSize,
   type HistoryDetail,
   type HistoryJobSummary,
@@ -55,6 +59,90 @@ function StatusIcon({ status }: { status: string }) {
   return <span className="h-2 w-2 rounded-full bg-muted-foreground" />;
 }
 
+const BROWSER_LABELS: Record<string, string> = {
+  chrome: "Chrome", firefox: "Firefox", edge: "Edge", brave: "Brave", opera: "Opera",
+  vivaldi: "Vivaldi", safari: "Safari", chromium: "Chromium", whale: "Whale",
+};
+
+/** YouTube increasingly blocks anonymous downloads outright ("Sign in to confirm you're not
+ * a bot") — this connects a real login once, exported to a static file, so downloads work
+ * without needing that browser open. Shown when not connected yet, or when a running job
+ * signals it's likely hitting that exact block (`onReconnected` re-checks status so the
+ * caller can hide this again once it's fixed). */
+function YoutubeLoginCard({
+  reason,
+  onReconnected,
+}: {
+  reason: "not-connected" | "likely-blocked";
+  onReconnected: () => void;
+}) {
+  const [browsers, setBrowsers] = useState<string[]>([]);
+  const [browser, setBrowser] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getYoutubeCookieBrowsers().then((r) => {
+      setBrowsers(r.browsers);
+      setBrowser(r.browsers[0] ?? "");
+    });
+  }, []);
+
+  const connect = async () => {
+    if (!browser) return;
+    setError(null);
+    setConnecting(true);
+    try {
+      await setupYoutubeCookies(browser);
+      onReconnected();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't connect.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <div className="surface flex flex-wrap items-center gap-4 px-5 py-4">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+        <LogIn className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">
+          {reason === "likely-blocked" ? "Your YouTube connection may have expired" : "Connect YouTube"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {reason === "likely-blocked"
+            ? "Downloads are failing the way they do when YouTube is blocking anonymous requests — reconnecting usually fixes it."
+            : "YouTube increasingly blocks downloads that aren't signed in. Connect once — pick the browser you're logged into YouTube with."}
+        </p>
+        {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+      </div>
+      <div className="flex items-center gap-2">
+        <select
+          value={browser}
+          onChange={(e) => setBrowser(e.target.value)}
+          className="h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-primary"
+        >
+          {browsers.map((b) => (
+            <option key={b} value={b}>
+              {BROWSER_LABELS[b] ?? b}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => void connect()}
+          disabled={connecting || !browser}
+          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40"
+        >
+          {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {connecting ? "Connecting…" : "Connect"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const PAGE_SIZE = 10;
 
 function DownloadPage() {
@@ -83,6 +171,12 @@ function DownloadPage() {
   useEffect(() => {
     _resumeIfNeeded();
   }, [_resumeIfNeeded]);
+
+  const [youtubeCookiesConfigured, setYoutubeCookiesConfigured] = useState<boolean | null>(null);
+  const refreshCookieStatus = () => {
+    void getYoutubeCookieStatus().then((s) => setYoutubeCookiesConfigured(s.configured));
+  };
+  useEffect(refreshCookieStatus, []);
 
   const queries = text
     .split("\n")
@@ -146,6 +240,11 @@ function DownloadPage() {
                 One song per line — "Artist – Title" works best.
               </p>
               <div className="mt-8 w-full max-w-2xl">
+                {youtubeCookiesConfigured === false && (
+                  <div className="mb-4">
+                    <YoutubeLoginCard reason="not-connected" onReconnected={refreshCookieStatus} />
+                  </div>
+                )}
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -180,6 +279,12 @@ function DownloadPage() {
               transition={{ duration: 0.3 }}
               className="flex-1 px-8 py-8"
             >
+              {status?.likelyBlocked && (
+                <div className="mb-4">
+                  <YoutubeLoginCard reason="likely-blocked" onReconnected={refreshCookieStatus} />
+                </div>
+              )}
+
               {/* Stats bar */}
               <motion.div layout className="surface flex items-center gap-6 px-6 py-4">
                 <div className="flex-1">

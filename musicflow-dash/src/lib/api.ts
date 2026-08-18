@@ -50,6 +50,10 @@ export interface JobStatus {
   finished: boolean;
   paused: boolean;
   recent: DownloadItem[];
+  /** True when the most recent retry cycle failed 100% with HTTP 403 — a strong sign YouTube
+   * is blocking anonymous requests outright, and reconnecting a YouTube login (see the
+   * youtube-cookies endpoints) is the most likely fix. */
+  likelyBlocked: boolean;
 }
 
 export interface HistoryJobSummary {
@@ -433,3 +437,29 @@ export const submitLastfmScrobble = (payload: ScrobblePayload) =>
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+/* ------------------------------- YouTube login (cookies) ------------------------------ */
+/* A one-time export from a real browser to a static file — see server.py for why this is a
+ * file, not a live browser read on every download. */
+
+export const getYoutubeCookieBrowsers = () =>
+  req<{ browsers: string[] }>("/api/youtube-cookies/browsers");
+
+export const getYoutubeCookieStatus = () =>
+  req<{ configured: boolean; browser: string }>("/api/youtube-cookies/status");
+
+/** Not routed through req() — the backend's error message here (e.g. "no YouTube login found
+ * in firefox") is specific and actionable, worth showing as-is instead of a generic failure. */
+export const setupYoutubeCookies = async (browser: string): Promise<{ ok: true }> => {
+  const res = await fetch(`${BASE}/api/youtube-cookies/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ browser }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  return data;
+};
+
+export const disconnectYoutubeCookies = () =>
+  req<{ ok: boolean }>("/api/youtube-cookies/disconnect", { method: "POST" });

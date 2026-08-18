@@ -7,6 +7,8 @@
 # onedir starts near-instantly at the cost of shipping a folder instead of one exe — fine here
 # since electron-builder bundles the whole folder as an extraResource either way.
 
+from PyInstaller.utils.hooks import collect_data_files
+
 a = Analysis(
     ['electron_main.py'],
     pathex=[],
@@ -19,6 +21,10 @@ a = Analysis(
         # without one, downloads 403 even though extraction/search still works fine. See
         # find_deno() in main.py.
         ('bin/deno.exe', 'bin'),
+        # yt-dlp-ejs ships the actual challenge-solver JS as package data (.min.js files, not
+        # .py) — PyInstaller's import tracing won't pick those up on its own. Bundling them
+        # locally like this means yt-dlp never needs to fetch them from GitHub at runtime.
+        *collect_data_files('yt_dlp_ejs'),
     ],
     # yt-dlp ships its own PyInstaller hook (via pyinstaller-hooks-contrib) that already pulls
     # in its extractor modules and transitive deps (requests, urllib3, Cryptodome, ...)

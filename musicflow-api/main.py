@@ -11,7 +11,99 @@ import yt_dlp
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT, TIT2, TPE1, TALB, TRCK, TDRC, TCON, APIC
 from mutagen.mp3 import MP3
 
+import db
+
 log = logging.getLogger("musicflow")
+
+# Browsers yt-dlp knows how to read cookies from — kept here (not just inline in server.py)
+# so the frontend's dropdown and the backend's validation always agree on what's offered.
+SUPPORTED_COOKIE_BROWSERS = [
+    "chrome", "firefox", "edge", "brave", "opera", "vivaldi", "safari", "chromium", "whale",
+]
+
+# Auth cookies actually present on a real logged-in session — used to confirm the export
+# found a genuine login rather than silently "succeeding" with an empty/logged-out result.
+_YOUTUBE_AUTH_COOKIE_NAMES = {"SAPISID", "SID", "__Secure-3PSID", "LOGIN_INFO"}
+# yt-dlp's browser export pulls the *entire* cookie jar (every site, not just YouTube) — a
+# logged-in-everywhere browser profile can carry cookies for dozens of unrelated services
+# (banking, email, work tools, ...). Google's own SSO cookies that make YouTube auth work are
+# scoped to .google.com, not .youtube.com specifically, so that's as narrow as this can get
+# without breaking the login — but everything outside these two is dropped before the file
+# ever touches disk.
+_COOKIE_KEEP_DOMAINS = ("youtube.com", "google.com")
+
+
+def _youtube_cookies_path() -> str:
+    return os.path.join(db.DB_DIR, "youtube_cookies.txt")
+
+
+def find_youtube_cookies() -> str | None:
+    path = _youtube_cookies_path()
+    return path if os.path.isfile(path) else None
+
+
+def _cookie_line_domain(line: str) -> str | None:
+    # Netscape format: domain \t include_subdomains \t path \t secure \t expiry \t name \t value
+    parts = line.rstrip("\n").split("\t")
+    return parts[0].lstrip(".") if len(parts) == 7 else None
+
+
+def setup_youtube_cookies(browser: str) -> dict:
+    """Exports cookies from the given browser via yt-dlp's own extraction, keeps only the
+    domains YouTube login actually needs, and discards everything else before it's written
+    to a file that lives on disk indefinitely. Returns {"ok": True} or {"error": "..."}."""
+    if browser not in SUPPORTED_COOKIE_BROWSERS:
+        return {"error": f"Unsupported browser: {browser}"}
+
+    raw_path = _youtube_cookies_path() + ".raw"
+    try:
+        with yt_dlp.YoutubeDL({
+            "cookiesfrombrowser": (browser, None, None, None),
+            "cookiefile": raw_path,
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+        }):
+            pass
+    except Exception as e:
+        return {"error": f"Couldn't read cookies from {browser}: {e}"}
+
+    if not os.path.isfile(raw_path):
+        return {"error": f"No cookies found in {browser}"}
+
+    try:
+        with open(raw_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    finally:
+        try:
+            os.remove(raw_path)
+        except OSError:
+            pass
+
+    kept = [
+        line for line in lines
+        if line.startswith("#") or (
+            (domain := _cookie_line_domain(line)) is not None
+            and domain.endswith(_COOKIE_KEEP_DOMAINS)
+        )
+    ]
+    found_auth = any(
+        not line.startswith("#") and line.split("\t")[5] in _YOUTUBE_AUTH_COOKIE_NAMES
+        for line in kept
+    )
+    if not found_auth:
+        return {"error": f"No YouTube login found in {browser} — sign in there first, then try again."}
+
+    with open(_youtube_cookies_path(), "w", encoding="utf-8") as f:
+        f.writelines(kept)
+    return {"ok": True}
+
+
+def clear_youtube_cookies():
+    try:
+        os.remove(_youtube_cookies_path())
+    except OSError:
+        pass
 
 
 def rename_lyrics_backups(old_mp3_path: str, new_mp3_path: str) -> None:

@@ -21,9 +21,4 @@ contextBridge.exposeInMainWorld("musicflow", {
     ipcRenderer.on("window:maximized-changed", listener);
     return () => ipcRenderer.removeListener("window:maximized-changed", listener);
   },
-
-  // Opens Musicflow's own in-app YouTube sign-in window (see main.js) — resolves once a real
-  // login is detected, with the cookies the download pipeline needs, or { ok: false } if the
-  // user closes the window without finishing.
-  openYoutubeLogin: () => ipcRenderer.invoke("youtube-login:open"),
 });

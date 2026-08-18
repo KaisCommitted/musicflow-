@@ -43,6 +43,8 @@ no Node, nothing else to install.
 
 **Desktop integration**
 - Runs as a real desktop app via Electron — frameless window, native install/uninstall
+- Minimizes to the system tray — closing the window keeps music playing in the background;
+  quit from the tray icon's menu when you actually want to exit
 - Discord Rich Presence (shows what you're listening to — nothing to configure)
 - Scrobbling to ListenBrainz and/or Last.fm
 

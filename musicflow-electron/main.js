@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell, globalShortcut, ipcMain } = require("electron");
+const { app, BrowserWindow, Tray, Menu, dialog, shell, globalShortcut, ipcMain } = require("electron");
 const path = require("path");
 const net = require("net");
 const http = require("http");
@@ -14,6 +14,10 @@ app.setName("Musicflow");
 let backendProcess = null;
 let mainWindow = null;
 let backendPort = null;
+let tray = null;
+// Set once a real quit is underway (tray "Quit", OS shutdown, ...) so the window's own
+// close handler knows to actually let it close instead of hiding to the tray.
+let isQuitting = false;
 
 /** Let the OS pick a free port instead of hardcoding one — avoids ever colliding with a
  * `py server.py` dev instance someone already has running on 5000. */
@@ -149,7 +153,10 @@ function applyGlobalKeybinds(bindings) {
     const accelerator = acceleratorFromCombo(combo);
     try {
       const ok = globalShortcut.register(accelerator, () => {
+        // webContents stays alive (and keeps receiving IPC) even while the window is hidden
+        // to the tray — only an actually-destroyed window would need a guard here.
         if (mainWindow && !mainWindow.isDestroyed()) {
+          log(`[keybinds] "${accelerator}" fired -> ${actionId}`);
           mainWindow.webContents.send("keybinds:fire", actionId);
         }
       });
@@ -194,9 +201,50 @@ function createWindow() {
   mainWindow.on("maximize", () => mainWindow.webContents.send("window:maximized-changed", true));
   mainWindow.on("unmaximize", () => mainWindow.webContents.send("window:maximized-changed", false));
 
+  // Close (the X button, via TitleBar.tsx) hides to the tray instead of quitting — music keeps
+  // playing, same as most desktop players. Only an actual quit (tray menu, OS shutdown, ...)
+  // lets the window really close; isQuitting is set by the before-quit handler below.
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+}
+
+/** Windows tray icon — the only way back once the window's been hidden, and the "Quit" item
+ * is the only way to actually exit now that closing the window just hides it. */
+function createTray() {
+  tray = new Tray(path.join(__dirname, "build", "icon.ico"));
+  tray.setToolTip("Musicflow");
+
+  const showWindow = () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Show Musicflow", click: showWindow },
+      { type: "separator" },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+
+  // Left-click (Windows convention — macOS/Linux tray clicks open the context menu instead,
+  // not relevant here since this app only ships for Windows).
+  tray.on("click", showWindow);
 }
 
 // Frameless window (see createWindow) means the app's own TitleBar.tsx has to provide
@@ -217,6 +265,8 @@ if (!gotLock) {
   app.on("second-instance", () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      // Also handles the tray-hidden case — show() on an already-visible window is a no-op.
+      mainWindow.show();
       mainWindow.focus();
     }
   });
@@ -225,6 +275,7 @@ if (!gotLock) {
     try {
       await startBackend();
       createWindow();
+      createTray();
     } catch (err) {
       log("Startup failed:", err.message);
       dialog.showErrorBox(
@@ -244,9 +295,13 @@ if (!gotLock) {
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("before-quit", killBackend);
+  app.on("before-quit", () => {
+    isQuitting = true;
+    killBackend();
+  });
   app.on("will-quit", () => {
     killBackend();
     globalShortcut.unregisterAll();
+    tray?.destroy();
   });
 }

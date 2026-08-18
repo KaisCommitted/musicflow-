@@ -4,97 +4,113 @@ import { getAnalyser } from "@/lib/audioAnalyser";
 import { type NowPlayingEnergy } from "@/store/library";
 import { cn } from "@/lib/utils";
 
-/** Neutral, roughly-circular starting shape for the halo — close enough to a circle that it
- * doesn't read as "broken" before the first frame lands, but already faintly organic so there's
- * no visible snap once real audio data takes over. */
-const DEFAULT_BLOB = "46% 54% 52% 48% / 48% 46% 54% 52%";
+/** CSS-pixel size of the aura's own canvas — deliberately bigger than the art it surrounds
+ * (see the `inner`/bar-length numbers below) so the ring of bars has room to radiate out into
+ * the open space around the art, without a prop for every caller to have to think about. */
+const CANVAS_SIZE = 620;
 
-/** Per-level tuning for how hard the artwork reacts.
- * - `envSmoothing` is the envelope-follower rate applied to every raw analyser reading before
- *   it touches anything visual — this is what keeps the effect from looking like noise. Web
- *   Audio never smooths time-domain data itself, and even frequency data (which the AnalyserNode
- *   does smooth a little) still varies enough frame-to-frame to look shaky without this.
- * - `beatMultiplier` is how far bass has to spike above its own slow rolling average to count
- *   as a beat (lower = fires more readily).
- * - `blobAmt` is how far each corner of the halo can bulge from a perfect circle, in percentage
- *   points — this is the "shape changes with the beat" part, not just size/opacity.
- * - everything else scales how big a beat (and the ambient loudness underneath it) reads
- *   visually. Three levels for now — Settings exposes exactly these, nothing hidden beyond
- *   them, so adding a level later just means adding a key here. */
+/** freq[] bins to skip entirely — bin 0 (and the couple next to it) carry DC/near-DC energy
+ * that reads as a single wildly-oversized spike unrelated to anything audible, which is
+ * exactly what made an earlier version of this look broken (one huge bar, everything else
+ * flat) rather than like a real spectrum. */
+const BIN_OFFSET = 2;
+
+/** Per-level tuning. The aura is a ring of thin bars around the art — one bar per frequency
+ * bin, each bar's length its own smoothed bin energy — slowly rotating for a sense of
+ * continuous flow, with every bar getting an extra outward kick on each detected beat.
+ * - `envSmoothing`: envelope-follower rate applied to every bar's raw reading before it's
+ *   drawn. Raw analyser data is noisy frame to frame (Web Audio doesn't smooth time-domain
+ *   data at all, and its frequency-data smoothing alone isn't enough either) — skipping this
+ *   is what made an earlier version of this effect look like flicker instead of motion.
+ * - `beatMultiplier`: how far bass has to spike above its own slow rolling average to count as
+ *   a beat (lower = fires more readily).
+ * - `inner`/`maxBarLength`/`ambientAmt`/`pulseAmt`::the bar ring's geometry — inner radius, how
+ *   far a bar's own bin energy can push it out, how much ambient loudness adds on top, and how
+ *   big the shared kick is when a beat fires. Worst case (all maxed at once) is kept comfortably
+ *   under CANVAS_SIZE/2, with a hard clamp in the draw loop as a backstop.
+ * - `rotationSpeed`: radians/sec the whole ring slowly turns — real audio doesn't have a sense
+ *   of "flow" on its own (each bin is just a number), so this is a presentation choice, not
+ *   synthesized data: every bar's length is still 100% live audio, only its position drifts. */
 const PRESETS: Record<
   NowPlayingEnergy,
   {
+    bars: number;
     envSmoothing: number;
     beatMultiplier: number;
     decay: number;
     avgSmoothing: number;
+    inner: number;
+    maxBarLength: number;
+    ambientAmt: number;
+    pulseAmt: number;
+    rotationSpeed: number;
+    baseAlpha: number;
     scaleAmt: number;
-    haloOpacityBase: number;
-    haloOpacityAmt: number;
-    haloScaleAmt: number;
-    blobAmt: number;
   }
 > = {
   calm: {
+    bars: 64,
     envSmoothing: 0.09,
     beatMultiplier: 1.35,
     decay: 0.93,
     avgSmoothing: 0.05,
-    scaleAmt: 0.02,
-    haloOpacityBase: 0.18,
-    haloOpacityAmt: 0.2,
-    haloScaleAmt: 0.28,
-    blobAmt: 9,
+    inner: 158,
+    maxBarLength: 60,
+    ambientAmt: 14,
+    pulseAmt: 22,
+    rotationSpeed: 0.03,
+    baseAlpha: 0.5,
+    scaleAmt: 0.015,
   },
   balanced: {
-    envSmoothing: 0.14,
+    bars: 90,
+    envSmoothing: 0.15,
     beatMultiplier: 1.22,
     decay: 0.9,
     avgSmoothing: 0.045,
-    scaleAmt: 0.04,
-    haloOpacityBase: 0.24,
-    haloOpacityAmt: 0.3,
-    haloScaleAmt: 0.46,
-    blobAmt: 15,
+    inner: 158,
+    maxBarLength: 95,
+    ambientAmt: 20,
+    pulseAmt: 36,
+    rotationSpeed: 0.06,
+    baseAlpha: 0.62,
+    scaleAmt: 0.03,
   },
   energetic: {
-    envSmoothing: 0.2,
+    bars: 120,
+    envSmoothing: 0.22,
     beatMultiplier: 1.12,
     decay: 0.87,
     avgSmoothing: 0.04,
-    scaleAmt: 0.065,
-    haloOpacityBase: 0.3,
-    haloOpacityAmt: 0.4,
-    haloScaleAmt: 0.68,
-    blobAmt: 22,
+    inner: 158,
+    maxBarLength: 115,
+    ambientAmt: 25,
+    pulseAmt: 48,
+    rotationSpeed: 0.11,
+    baseAlpha: 0.75,
+    scaleAmt: 0.05,
   },
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** Wraps the full-screen player's album art with a real audio-reactive presence: a soft color
- * aura bleeding out into the open space around it, plus a scale pop on the art itself, both
- * driven frame-by-frame off the shared AnalyserNode — not a decorative CSS loop. The aura isn't
- * just a circle that grows and shrinks: its four corners deform independently off bass/mid/
- * treble energy (plus a kick from every beat), so its actual silhouette changes shape with the
- * music, not just size. A "beat" is bass energy spiking above its own recent rolling average
- * (so it adapts to the track instead of a fixed loudness threshold that'd never fire on a quiet
- * song or would fire constantly on a loud one); each beat sets a pulse that decays like a VU
- * meter's peak hold. Colored via --dynamic, the same per-song accent the rest of the UI already
- * themes around, so it's correct in both light and dark without any theme branching here.
+/** Wraps the full-screen player's album art with a real audio-reactive aura: a ring of thin
+ * bars radiating out from behind the art, one bar per frequency bin, each bar's own length its
+ * own smoothed bin energy — a real spiky, textured silhouette, not a vague glow. The whole ring
+ * turns slowly for a sense of flow, and every beat gives it a shared outward kick that decays
+ * like a VU meter's peak hold. Colored via --dynamic, the same per-song accent the rest of the
+ * UI already themes around, so it's correct in both light and dark without theme branching here.
  *
- * Every raw analyser reading passes through an envelope follower (see `envSmoothing`) before it
- * drives anything visual. Skipping this is what made an earlier version of this effect look
- * like shaky flicker instead of smooth motion — raw per-frame audio data is noisy (Web Audio
- * doesn't smooth time-domain data at all, and even its own frequency-data smoothing isn't
- * enough on its own), and animating directly off it reads as jitter, not "alive".
+ * Drawn on its own <canvas> (not CSS) — a real bar-per-bin ring needs real per-element geometry
+ * that CSS has no cheap way to express, and canvas is also just faster for ~100 redrawn
+ * segments every frame. The art's own subtle scale pulse is still applied via direct style
+ * mutation on a separate wrapper, deliberately not the framer-motion element that crossfades
+ * the art between songs (children) — driving the same DOM node's transform from two places
+ * would fight every frame.
  *
- * The scale/glow are applied to this component's own wrapper via direct style mutation in a
- * rAF loop — deliberately not going through the framer-motion element that crossfades the art
- * between songs (children), since driving the same DOM node's transform from two different
- * places would fight every frame. Only runs while actually playing; stops and resets on pause
- * or unmount so it costs nothing the rest of the time (and, like any rAF work, the browser
- * itself pauses the loop whenever the window isn't visible). */
+ * Only runs while actually playing; stops and resets on pause or unmount so it costs nothing
+ * the rest of the time (and, like any rAF work, the browser itself pauses the loop whenever the
+ * window isn't visible). */
 export function ReactiveArtwork({
   energy,
   className,
@@ -105,22 +121,20 @@ export function ReactiveArtwork({
   children: React.ReactNode;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
-  const haloRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const isPlaying = usePlayer((s) => s.isPlaying);
   const songId = usePlayer((s) => s.current()?.id);
 
   useEffect(() => {
     const stage = stageRef.current;
-    const halo = haloRef.current;
+    const canvas = canvasRef.current;
     const audio = getAudioElement();
-    if (!stage || !halo) return;
+    const ctx2d = canvas?.getContext("2d");
+    if (!stage || !canvas || !ctx2d) return;
 
     const reset = () => {
       stage.style.transform = "";
-      stage.style.boxShadow = "";
-      halo.style.opacity = "0";
-      halo.style.transform = "scale(1)";
-      halo.style.borderRadius = DEFAULT_BLOB;
+      ctx2d.clearRect(0, 0, canvas.width, canvas.height);
     };
 
     const node = audio && getAnalyser(audio);
@@ -129,41 +143,59 @@ export function ReactiveArtwork({
       return;
     }
 
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = CANVAS_SIZE * dpr;
+    canvas.height = CANVAS_SIZE * dpr;
+    ctx2d.scale(dpr, dpr);
+
+    // Re-read per song (not per frame — getComputedStyle forces a style recalc) so the aura
+    // tracks the per-track dynamic accent color the rest of the UI already themes around.
+    const color =
+      getComputedStyle(document.documentElement).getPropertyValue("--dynamic").trim() ||
+      getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
+
     const preset = PRESETS[energy];
     const freq = new Uint8Array(node.frequencyBinCount);
     const time = new Uint8Array(node.fftSize);
-    // Split into three bands by bin index — isolates kick/bass from mids/highs instead of
-    // averaging them all away together, which is what makes both beat detection and the
-    // per-corner blob shape possible at all.
-    const n = freq.length;
-    const bassEnd = Math.max(1, Math.floor(n * 0.12));
-    const midEnd = Math.max(bassEnd + 1, Math.floor(n * 0.45));
+    // Most of a track's energy sits in the lower ~75% of bins — the rest is near-silent for
+    // most music and would just draw a ring of flat, lifeless bars.
+    const usableBins = Math.floor(freq.length * 0.75) - BIN_OFFSET;
+    const bassEnd = Math.max(1, Math.floor(freq.length * 0.12));
+    const maxOuter = CANVAS_SIZE / 2 - 8;
+    const cx = CANVAS_SIZE / 2;
+    const cy = CANVAS_SIZE / 2;
 
+    // Precomputed once per song, not per frame: which bin range each bar averages over. Real
+    // music's energy is heavily bass-weighted, so a *linear* bin-per-bar mapping leaves the
+    // first couple of bars towering over a mostly-flat rest of the ring — this curves the
+    // mapping so low/mid frequencies (where the actual variation is) get spread across more
+    // bars instead of being crushed into the first two or three.
+    const n = preset.bars;
+    const binBounds: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      binBounds.push(BIN_OFFSET + Math.floor(Math.pow(i / n, 1.8) * usableBins));
+    }
+
+    const barEnv = new Float32Array(preset.bars);
     let raf = 0;
-    // Envelope-followed bands — everything visual reads from these, never from a raw
-    // per-frame value.
-    let bassEnv = 0;
-    let midEnv = 0;
-    let trebleEnv = 0;
-    let overallEnv = 0;
     let bassAvg = 0;
     let pulse = 0;
     let lastBeat = 0;
+    let rotation = 0;
+    let lastT = 0;
 
     const draw = (t: number) => {
       raf = requestAnimationFrame(draw);
+      if (!lastT) lastT = t;
+      const dt = Math.min(0.05, (t - lastT) / 1000);
+      lastT = t;
+
       node.getByteFrequencyData(freq);
       node.getByteTimeDomainData(time);
 
       let bassSum = 0;
       for (let i = 0; i < bassEnd; i++) bassSum += freq[i] ?? 0;
-      let midSum = 0;
-      for (let i = bassEnd; i < midEnd; i++) midSum += freq[i] ?? 0;
-      let trebleSum = 0;
-      for (let i = midEnd; i < n; i++) trebleSum += freq[i] ?? 0;
       const bass = bassSum / bassEnd / 255;
-      const mid = midSum / (midEnd - bassEnd) / 255;
-      const treble = trebleSum / (n - midEnd) / 255;
 
       let sumSq = 0;
       for (let i = 0; i < time.length; i++) {
@@ -172,50 +204,65 @@ export function ReactiveArtwork({
       }
       const overall = Math.min(1, Math.sqrt(sumSq / time.length) * 1.8);
 
-      const k = preset.envSmoothing;
-      bassEnv += (bass - bassEnv) * k;
-      midEnv += (mid - midEnv) * k;
-      trebleEnv += (treble - trebleEnv) * k;
-      overallEnv += (overall - overallEnv) * k;
-      // Tracks the already-smoothed bassEnv, on a much slower timescale — this is "what bass
-      // has looked like recently", the baseline a real spike needs to clear.
-      bassAvg += (bassEnv - bassAvg) * preset.avgSmoothing;
-
-      // The floor (bassEnv > 0.12) keeps near-silence from "spiking" relative to a near-zero
+      bassAvg += (bass - bassAvg) * preset.avgSmoothing;
+      // The floor (bass > 0.12) keeps near-silence from "spiking" relative to a near-zero
       // average; the cooldown (220ms) keeps one kick's decay tail from re-triggering itself.
-      if (bassEnv > bassAvg * preset.beatMultiplier && bassEnv > 0.12 && t - lastBeat > 220) {
+      if (bass > bassAvg * preset.beatMultiplier && bass > 0.12 && t - lastBeat > 220) {
         pulse = 1;
         lastBeat = t;
       }
       pulse *= preset.decay;
+      rotation += preset.rotationSpeed * dt;
 
-      const scale = 1 + pulse * preset.scaleAmt + overallEnv * preset.scaleAmt * 0.3;
-      stage.style.transform = `scale(${scale.toFixed(4)})`;
-      const glowBlur = 40 + pulse * 60 + overallEnv * 30;
-      const glowSpread = pulse * 6;
-      const glowAlpha = clamp(0.35 + pulse * 0.4 + overallEnv * 0.15, 0, 1);
-      stage.style.boxShadow =
-        `0 0 ${glowBlur.toFixed(0)}px ${glowSpread.toFixed(0)}px ` +
-        `color-mix(in oklab, var(--dynamic) ${Math.round(glowAlpha * 100)}%, transparent)`;
+      stage.style.transform =
+        `scale(${(1 + pulse * preset.scaleAmt + overall * preset.scaleAmt * 0.3).toFixed(4)})`;
 
-      halo.style.opacity = clamp(
-        preset.haloOpacityBase + overallEnv * preset.haloOpacityAmt + pulse * preset.haloOpacityAmt,
-        0,
-        1,
-      ).toFixed(3);
-      halo.style.transform = `scale(${(1 + overallEnv * preset.haloScaleAmt * 0.6 + pulse * preset.haloScaleAmt).toFixed(4)})`;
+      ctx2d.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      ctx2d.save();
+      ctx2d.translate(cx, cy);
+      ctx2d.rotate(rotation);
+      ctx2d.lineCap = "round";
 
-      // The aura's actual silhouette: each corner's two radii pull from a different band (plus
-      // a shared kick from the beat pulse), all already-smooth envelope values, so the shape
-      // drifts and bulges instead of snapping. Crossing bands across corners (rather than one
-      // band per corner) keeps it from reading as four mechanically-independent lobes.
-      const amt = preset.blobAmt;
-      const kick = pulse * amt * 0.7;
-      const r = (band: number, phase: number) =>
-        clamp(50 + (band - 0.32) * amt + kick * phase, 28, 72).toFixed(1);
-      halo.style.borderRadius =
-        `${r(bassEnv, 1)}% ${r(midEnv, -1)}% ${r(trebleEnv, 1)}% ${r(overallEnv, -1)}% / ` +
-        `${r(trebleEnv, -1)}% ${r(overallEnv, 1)}% ${r(bassEnv, -1)}% ${r(midEnv, 1)}%`;
+      const path = new Path2D();
+      for (let i = 0; i < n; i++) {
+        // Average over this bar's whole bin window (not a single sampled bin) — a lot smoother
+        // bar-to-bar, and far less prone to one noisy bin spiking on its own.
+        const lo = binBounds[i]!;
+        const hi = Math.max(lo + 1, binBounds[i + 1]!);
+        let sum = 0;
+        for (let b = lo; b < hi; b++) sum += freq[b] ?? 0;
+        const raw = sum / (hi - lo) / 255;
+        // Gamma-compresses the amplitude (same idea as a dB scale on a real spectrum analyzer)
+        // so quiet bars still visibly move instead of every bar but the loudest handful
+        // reading as flat — raw linear amplitude makes almost the whole ring look dead.
+        const compressed = Math.pow(raw, 0.6);
+        const env = barEnv[i]! + (compressed - barEnv[i]!) * preset.envSmoothing;
+        barEnv[i] = env;
+        const len = env * preset.maxBarLength + overall * preset.ambientAmt + pulse * preset.pulseAmt;
+        const outer = Math.min(preset.inner + Math.max(4, len), maxOuter);
+        const angle = (i / n) * Math.PI * 2;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        path.moveTo(cosA * preset.inner, sinA * preset.inner);
+        path.lineTo(cosA * outer, sinA * outer);
+      }
+
+      // Two passes over the same path: a soft blurred glow, then a crisp pass on top — cheaper
+      // than giving each of ~100 bars its own shadow, and reads as "glowing bars" either way.
+      const glowAlpha = clamp(preset.baseAlpha * 0.55 + pulse * 0.3, 0, 1);
+      ctx2d.shadowColor = color;
+      ctx2d.shadowBlur = 26 + pulse * 28;
+      ctx2d.strokeStyle = `color-mix(in oklab, ${color} ${Math.round(glowAlpha * 100)}%, transparent)`;
+      ctx2d.lineWidth = 9;
+      ctx2d.stroke(path);
+
+      const detailAlpha = clamp(preset.baseAlpha * 0.85 + pulse * 0.25, 0, 1);
+      ctx2d.shadowBlur = 0;
+      ctx2d.strokeStyle = `color-mix(in oklab, ${color} ${Math.round(detailAlpha * 100)}%, transparent)`;
+      ctx2d.lineWidth = 3.2;
+      ctx2d.stroke(path);
+
+      ctx2d.restore();
     };
 
     raf = requestAnimationFrame(draw);
@@ -227,21 +274,19 @@ export function ReactiveArtwork({
 
   return (
     <div className={cn("relative", className)}>
-      {/* Painted before `stage` below, so it sits behind the art in the default stacking
-          order — a negative z-index here would instead escape to the nearest ancestor that
-          establishes its own stacking context (the full-screen player's fixed/z-50 root),
+      {/* Sized and centered off its own fixed CANVAS_SIZE, independent of the art's own size —
+          absolute positioning takes it out of layout, so it doesn't push the title/controls
+          below it. Painted before `stage` below, so it sits behind the art in the default
+          stacking order — a negative z-index here would instead escape to the nearest ancestor
+          that establishes its own stacking context (the full-screen player's fixed/z-50 root),
           landing behind that view's own background-blur overlay and never showing at all. */}
-      {/* No CSS transition here on purpose — opacity/transform/borderRadius are already
-          updated every frame from envelope-smoothed values below, and layering a CSS
-          transition on top would just retrigger against a moving target on every frame,
-          producing a laggy chase instead of anything smoother. */}
-      <div
-        ref={haloRef}
+      <canvas
+        ref={canvasRef}
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-0 blur-3xl"
-        style={{ backgroundColor: "var(--dynamic)", borderRadius: DEFAULT_BLOB }}
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
       />
-      <div ref={stageRef} className="h-full w-full rounded-3xl">
+      <div ref={stageRef} className="relative h-full w-full rounded-3xl">
         {children}
       </div>
     </div>

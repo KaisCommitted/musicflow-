@@ -7,10 +7,10 @@ import {
   Check,
   Heart,
   ListEnd,
+  Pause,
   Play,
   Plus,
   Trash2,
-  Volume2,
   X,
 } from "lucide-react";
 import type { Song } from "@/lib/api";
@@ -211,6 +211,7 @@ export function SongTable({
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "index", dir: 1 });
   const playQueue = usePlayer((s) => s.playQueue);
+  const toggle = usePlayer((s) => s.toggle);
   const openMenu = useSongMenu((s) => s.open);
   const current = usePlayer((s) => s.current());
   const isPlaying = usePlayer((s) => s.isPlaying);
@@ -384,12 +385,14 @@ export function SongTable({
                   />
                 ) : (
                   <button
-                    onClick={() => playQueue(sorted, i, context)}
-                    aria-label={`Play ${song.title}`}
+                    // For the active song, toggle play/pause in place — starting a fresh
+                    // playQueue here would restart it from 0 instead of resuming.
+                    onClick={() => (active ? toggle() : playQueue(sorted, i, context))}
+                    aria-label={active && isPlaying ? `Pause ${song.title}` : `Play ${song.title}`}
                     className="hidden group-hover:grid group-hover:place-items-center"
                   >
                     {active && isPlaying ? (
-                      <Volume2 className="h-4 w-4 text-primary" />
+                      <Pause className="h-4 w-4 text-primary" />
                     ) : (
                       <Play className="h-4 w-4 text-primary" />
                     )}

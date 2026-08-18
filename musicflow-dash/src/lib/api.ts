@@ -456,6 +456,16 @@ export const scanYoutubeCookieBrowsers = () =>
 export const getYoutubeCookieStatus = () =>
   req<{ configured: boolean; browser: string }>("/api/youtube-cookies/status");
 
+/** Opens `browser` at youtube.com so someone with more than one Google account signed in there
+ * can see (and switch, via YouTube's own account menu) which one is currently active — that's
+ * the account Connect will actually export, and there's no way to pick a different one from
+ * inside Musicflow itself. */
+export const openYoutubeInBrowser = (browser: string) =>
+  req<{ ok: boolean }>("/api/youtube-cookies/open", {
+    method: "POST",
+    body: JSON.stringify({ browser }),
+  });
+
 /** Not routed through req() — the backend's error message here (e.g. "no YouTube login found
  * in firefox") is specific and actionable, worth showing as-is instead of a generic failure.
  * `closeFirst` closes every process for `browser` before reading its cookies — only meaningful

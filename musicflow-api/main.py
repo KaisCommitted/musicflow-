@@ -137,17 +137,21 @@ def scan_youtube_browsers() -> dict:
     return {"browsers": found, "locked": locked, "blocked": blocked}
 
 
-# Only the browsers that can actually produce a "locked" classification need an entry here —
-# Firefox doesn't lock its cookie database the same way Chromium does, so it never hits that
-# failure and this mapping is never consulted for it.
-_BROWSER_PROCESS_NAMES = {
+# Every supported browser's executable name, keyed the same as SUPPORTED_COOKIE_BROWSERS.
+_BROWSER_EXE_NAMES = {
     "chrome": "chrome.exe",
+    "firefox": "firefox.exe",
     "edge": "msedge.exe",
     "brave": "brave.exe",
     "opera": "opera.exe",
     "vivaldi": "vivaldi.exe",
     "chromium": "chrome.exe",  # official Chromium builds still ship as chrome.exe
 }
+
+# Only the browsers that can actually produce a "locked" classification need an entry here —
+# Firefox doesn't lock its cookie database the same way Chromium does, so it never hits that
+# failure and this mapping is never consulted for it.
+_BROWSER_PROCESS_NAMES = {b: exe for b, exe in _BROWSER_EXE_NAMES.items() if b != "firefox"}
 
 
 def _processes_running(exe: str) -> bool:
@@ -237,6 +241,24 @@ def clear_youtube_cookies():
         os.remove(_youtube_cookies_path())
     except OSError:
         pass
+
+
+def open_youtube_in_browser(browser: str) -> dict:
+    """Launches the given browser at youtube.com so someone can see — and switch, via YouTube's
+    own avatar/account menu — which of their Google accounts is currently active there. That
+    account is exactly the one that ends up in the exported cookies; Musicflow has no way to
+    pick a different one on its own, since the cookie jar only ever reflects whichever account
+    the browser itself currently has active for youtube.com. Resolves the browser via Windows'
+    own "start <exe>" (the same App Paths lookup Win+R uses) rather than a full path, since we
+    never learn one from anywhere else."""
+    exe = _BROWSER_EXE_NAMES.get(browser)
+    if not exe:
+        return {"error": f"Unsupported browser: {browser}"}
+    try:
+        subprocess.Popen(["cmd", "/c", "start", "", exe, "https://www.youtube.com/"])
+        return {"ok": True}
+    except OSError as e:
+        return {"error": f"Couldn't open {browser}: {e}"}
 
 
 def rename_lyrics_backups(old_mp3_path: str, new_mp3_path: str) -> None:

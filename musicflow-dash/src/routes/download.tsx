@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  ExternalLink,
   Loader2,
   LogIn,
   Pause,
@@ -25,6 +26,7 @@ import {
   getHistory,
   getHistoryDetail,
   jobArtworkUrl,
+  openYoutubeInBrowser,
   retryHistoryItem,
   scanYoutubeCookieBrowsers,
   setupYoutubeCookies,
@@ -140,6 +142,7 @@ function YoutubeLoginCard() {
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem(YOUTUBE_CARD_DISMISS_KEY) === "1",
   );
@@ -169,6 +172,18 @@ function YoutubeLoginCard() {
     }
   };
   const connect = () => connectTo(browser, false);
+
+  const openInBrowser = async () => {
+    if (!browser) return;
+    setOpening(true);
+    try {
+      await openYoutubeInBrowser(browser);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't open the browser.");
+    } finally {
+      setOpening(false);
+    }
+  };
 
   if (dismissed || connected) return null;
 
@@ -204,7 +219,25 @@ function YoutubeLoginCard() {
         {scanning ? (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : browsers.length > 0 ? (
-          <BrowserPicker browsers={browsers} value={browser} onChange={setBrowser} />
+          <>
+            <BrowserPicker browsers={browsers} value={browser} onChange={setBrowser} />
+            {/* Cookies always come from whichever Google account is currently active in this
+             * browser — with more than one signed in there, this is the only reliable way to
+             * see (or switch, via YouTube's own avatar menu) which one that is before
+             * connecting, since Musicflow can't pick a different one on its own. */}
+            <button
+              onClick={() => void openInBrowser()}
+              disabled={opening}
+              title={`Open YouTube in ${BROWSER_LABELS[browser] ?? browser} to check which account is active`}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-40"
+            >
+              {opening ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ExternalLink className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </>
         ) : null}
         {(scanning || browsers.length > 0) && (
           <button

@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
 from PIL import Image
-from main import find_ffmpeg, find_deno, find_node, find_pot_server, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, scan_youtube_browsers, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, find_deno, find_node, find_pot_server, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, scan_youtube_browsers, open_youtube_in_browser, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
 import scrobbling
@@ -2112,6 +2112,22 @@ def youtube_cookies_status():
         "configured": configured,
         "browser": db.get_setting("youtubeCookiesBrowser", "") if configured else "",
     })
+
+
+@app.route("/api/youtube-cookies/open", methods=["POST"])
+def youtube_cookies_open():
+    """Opens the given browser at youtube.com — not to log in (the scan already found a login),
+    but so someone with several Google accounts signed in at once can see, and switch via
+    YouTube's own account menu, which one is active before connecting. That's the account
+    Connect will actually export; there's no way to pick a different one from inside Musicflow."""
+    data = request.get_json() or {}
+    browser = str(data.get("browser", "")).strip().lower()
+    if not browser:
+        return jsonify({"error": "Missing browser"}), 400
+    result = open_youtube_in_browser(browser)
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify({"ok": True})
 
 
 @app.route("/api/youtube-cookies/setup", methods=["POST"])

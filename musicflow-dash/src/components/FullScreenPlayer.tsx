@@ -19,13 +19,14 @@ import {
   VolumeX,
 } from "lucide-react";
 import { AlbumArt } from "@/components/AlbumArt";
-import { AudioVisualizer } from "@/components/AudioVisualizer";
+import { ReactiveArtwork } from "@/components/ReactiveArtwork";
 import { Waveform } from "@/components/Waveform";
 import { LikeButton } from "@/components/LikeButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
+import { useLibrary } from "@/store/library";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
 import { formatTime } from "@/lib/format";
 import { gradientFromString } from "@/lib/colors";
@@ -54,6 +55,7 @@ export function FullScreenPlayer() {
     toggleMute,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
+  const nowPlayingEnergy = useLibrary((s) => s.settings.nowPlayingEnergy);
   const total = duration || song?.duration || 0;
   const { sources, activeMethod, lines, synced, switchSource, shiftOffset, sessionShift } =
     useLyrics(fullscreen ? song : null, total);
@@ -173,27 +175,27 @@ export function FullScreenPlayer() {
               </motion.button>
             </div>
 
-            <AudioVisualizer className="px-14 opacity-70" />
-
             <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
               <div className="flex flex-col items-center justify-center gap-8">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={song.id}
-                    initial={{ opacity: 0, scale: 0.94 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.94 }}
-                    transition={{ duration: 0.35 }}
-                    className="glow-ring overflow-hidden rounded-3xl shadow-elevated"
-                  >
-                    <AlbumArt
-                      song={song}
-                      className="h-72 w-72"
-                      iconClassName="h-12 w-12"
-                      size="large"
-                    />
-                  </motion.div>
-                </AnimatePresence>
+                <ReactiveArtwork energy={nowPlayingEnergy} className="h-72 w-72">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={song.id}
+                      initial={{ opacity: 0, scale: 0.94 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.94 }}
+                      transition={{ duration: 0.35 }}
+                      className="h-full w-full overflow-hidden rounded-3xl shadow-elevated"
+                    >
+                      <AlbumArt
+                        song={song}
+                        className="h-full w-full"
+                        iconClassName="h-12 w-12"
+                        size="large"
+                      />
+                    </motion.div>
+                  </AnimatePresence>
+                </ReactiveArtwork>
 
                 <div className="w-full max-w-md text-center">
                   <div className="flex items-center justify-center gap-2">

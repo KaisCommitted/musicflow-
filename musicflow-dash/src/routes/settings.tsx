@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Globe, Moon, RefreshCw, Sun } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
-import { NOW_PLAYING_ENERGIES, useLibrary, type Settings } from "@/store/library";
+import { useLibrary, type Settings } from "@/store/library";
 import {
   backupExportUrl,
   completeLastfmAuth,
@@ -606,27 +606,6 @@ function SettingsPage() {
             on={settings.fetchLyricsAutomatically}
             onChange={(v) => set("fetchLyricsAutomatically", v)}
           />
-        </Row>
-        <Row
-          title="Now Playing energy"
-          description="How much the album art reacts to the music in the full-screen player."
-        >
-          <div className="flex gap-2">
-            {NOW_PLAYING_ENERGIES.map((e) => (
-              <button
-                key={e}
-                onClick={() => set("nowPlayingEnergy", e)}
-                className={cn(
-                  "rounded-full border border-border px-4 py-2 text-xs capitalize transition-colors",
-                  settings.nowPlayingEnergy === e
-                    ? "border-primary text-primary"
-                    : "text-muted-foreground",
-                )}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
         </Row>
       </div>
 

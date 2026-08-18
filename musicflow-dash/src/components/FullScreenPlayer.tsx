@@ -19,14 +19,12 @@ import {
   VolumeX,
 } from "lucide-react";
 import { AlbumArt } from "@/components/AlbumArt";
-import { ReactiveArtwork } from "@/components/ReactiveArtwork";
 import { Waveform } from "@/components/Waveform";
 import { LikeButton } from "@/components/LikeButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
-import { useLibrary } from "@/store/library";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
 import { formatTime } from "@/lib/format";
 import { gradientFromString } from "@/lib/colors";
@@ -55,7 +53,6 @@ export function FullScreenPlayer() {
     toggleMute,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
-  const nowPlayingEnergy = useLibrary((s) => s.settings.nowPlayingEnergy);
   const total = duration || song?.duration || 0;
   const { sources, activeMethod, lines, synced, switchSource, shiftOffset, sessionShift } =
     useLyrics(fullscreen ? song : null, total);
@@ -145,57 +142,60 @@ export function FullScreenPlayer() {
           <div className="absolute inset-0 bg-background/90 backdrop-blur-2xl" />
 
           <div className="relative flex h-full flex-col">
-            <div className="flex items-center justify-between px-6 py-5">
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.9, y: 2 }}
-                onClick={() => setFullscreen(false)}
-                aria-label="Minimize player"
-                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
-              >
-                <ChevronDown className="h-5 w-5" />
-              </motion.button>
-              <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                Now Playing
-              </p>
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.9, y: 2 }}
-                onClick={toggleDocFullscreen}
-                aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
-                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
-              >
-                <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
-                  {docFullscreen ? (
-                    <Minimize className="h-5 w-5" />
-                  ) : (
-                    <Maximize className="h-5 w-5" />
-                  )}
-                </IconSwap>
-              </motion.button>
-            </div>
+            {/* Hidden in real (OS-level) fullscreen — an immersive view shouldn't still show its
+                own chrome on top of that. Escape still exits real fullscreen natively either
+                way, so there's no loss of a way back out. */}
+            {!docFullscreen && (
+              <div className="flex items-center justify-between px-6 py-5">
+                <motion.button
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.9, y: 2 }}
+                  onClick={() => setFullscreen(false)}
+                  aria-label="Minimize player"
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+                >
+                  <ChevronDown className="h-5 w-5" />
+                </motion.button>
+                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                  Now Playing
+                </p>
+                <motion.button
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.9, y: 2 }}
+                  onClick={toggleDocFullscreen}
+                  aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+                >
+                  <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
+                    {docFullscreen ? (
+                      <Minimize className="h-5 w-5" />
+                    ) : (
+                      <Maximize className="h-5 w-5" />
+                    )}
+                  </IconSwap>
+                </motion.button>
+              </div>
+            )}
 
             <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
               <div className="flex flex-col items-center justify-center gap-8">
-                <ReactiveArtwork energy={nowPlayingEnergy} className="h-72 w-72">
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={song.id}
-                      initial={{ opacity: 0, scale: 0.94 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.94 }}
-                      transition={{ duration: 0.35 }}
-                      className="h-full w-full overflow-hidden rounded-3xl shadow-elevated"
-                    >
-                      <AlbumArt
-                        song={song}
-                        className="h-full w-full"
-                        iconClassName="h-12 w-12"
-                        size="large"
-                      />
-                    </motion.div>
-                  </AnimatePresence>
-                </ReactiveArtwork>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={song.id}
+                    initial={{ opacity: 0, scale: 0.94 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.94 }}
+                    transition={{ duration: 0.35 }}
+                    className="glow-ring overflow-hidden rounded-3xl shadow-elevated"
+                  >
+                    <AlbumArt
+                      song={song}
+                      className="h-72 w-72"
+                      iconClassName="h-12 w-12"
+                      size="large"
+                    />
+                  </motion.div>
+                </AnimatePresence>
 
                 <div className="w-full max-w-md text-center">
                   <div className="flex items-center justify-center gap-2">
@@ -407,7 +407,12 @@ export function FullScreenPlayer() {
                 )}
                 <div
                   ref={listRef}
-                  className="min-h-0 flex-1 overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]"
+                  className={cn(
+                    "min-h-0 flex-1 overflow-y-auto py-24 [mask-image:linear-gradient(transparent,black_18%,black_82%,transparent)]",
+                    // Scrolling still works — this only hides the visible scrollbar track/thumb,
+                    // which has no place in an otherwise-chromeless immersive view.
+                    docFullscreen && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                  )}
                 >
                   {lines.length === 0 ? (
                     <p className="text-center text-sm text-muted-foreground">No lyrics found.</p>

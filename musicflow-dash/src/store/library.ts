@@ -24,11 +24,6 @@ export interface CreatePlaylistResult {
   error?: string;
 }
 
-/** How strongly the full-screen player's audio-reactive artwork responds to the music —
- * see ReactiveArtwork, which owns the actual per-level tuning. */
-export type NowPlayingEnergy = "calm" | "balanced" | "energetic";
-export const NOW_PLAYING_ENERGIES: NowPlayingEnergy[] = ["calm", "balanced", "energetic"];
-
 export interface Settings {
   musicFolder: string;
   theme: "dark" | "light";
@@ -38,7 +33,6 @@ export interface Settings {
   autoScanOnStart: boolean;
   gaplessPlayback: boolean;
   fetchLyricsAutomatically: boolean;
-  nowPlayingEnergy: NowPlayingEnergy;
   /** JSON-encoded Record<KeybindActionId, string>; "" means defaults. */
   keybinds: string;
   /** Whether Playback keybinds also work while Musicflow isn't focused (Electron only). */
@@ -105,7 +99,6 @@ const defaultSettings: Settings = {
   autoScanOnStart: true,
   gaplessPlayback: true,
   fetchLyricsAutomatically: true,
-  nowPlayingEnergy: "balanced",
   keybinds: "",
   keybindGlobalMode: "off",
   globalKeybinds: "[]",
@@ -127,9 +120,6 @@ function parseSettings(raw: Record<string, string>): Settings {
     autoScanOnStart: raw["autoScanOnStart"] !== "false",
     gaplessPlayback: raw["gaplessPlayback"] !== "false",
     fetchLyricsAutomatically: raw["fetchLyricsAutomatically"] !== "false",
-    nowPlayingEnergy: NOW_PLAYING_ENERGIES.includes(raw["nowPlayingEnergy"] as NowPlayingEnergy)
-      ? (raw["nowPlayingEnergy"] as NowPlayingEnergy)
-      : "balanced",
     keybinds: raw["keybinds"] ?? "",
     keybindGlobalMode: (["off", "all", "custom"] as const).includes(
       raw["keybindGlobalMode"] as KeybindGlobalMode,
@@ -156,7 +146,6 @@ function serializeSettings(s: Settings): Record<string, string> {
     autoScanOnStart: String(s.autoScanOnStart),
     gaplessPlayback: String(s.gaplessPlayback),
     fetchLyricsAutomatically: String(s.fetchLyricsAutomatically),
-    nowPlayingEnergy: s.nowPlayingEnergy,
     keybinds: s.keybinds,
     keybindGlobalMode: s.keybindGlobalMode,
     globalKeybinds: s.globalKeybinds,

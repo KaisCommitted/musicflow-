@@ -11,6 +11,7 @@ import {
   Play,
   Plus,
   Trash2,
+  Volume2,
   X,
 } from "lucide-react";
 import type { Song } from "@/lib/api";
@@ -372,31 +373,39 @@ export function SongTable({
                     className="h-4 w-4 cursor-pointer accent-primary"
                   />
                 ) : selectionActive ? (
-                  <input
-                    type="checkbox"
-                    checked={false}
-                    onChange={() => {}}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSelect(i, e.shiftKey);
-                    }}
-                    aria-label={`Select ${song.title}`}
-                    className="hidden h-4 w-4 cursor-pointer accent-primary group-hover:block"
-                  />
+                  <>
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      onChange={() => {}}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(i, e.shiftKey);
+                      }}
+                      aria-label={`Select ${song.title}`}
+                      className="hidden h-4 w-4 cursor-pointer accent-primary group-hover:block"
+                    />
+                    <span className="group-hover:hidden">{i + 1}</span>
+                  </>
                 ) : (
-                  <button
-                    // For the active song, toggle play/pause in place — starting a fresh
-                    // playQueue here would restart it from 0 instead of resuming.
-                    onClick={() => (active ? toggle() : playQueue(sorted, i, context))}
-                    aria-label={active && isPlaying ? `Pause ${song.title}` : `Play ${song.title}`}
-                    className="hidden group-hover:grid group-hover:place-items-center"
-                  >
-                    {active && isPlaying ? (
-                      <Pause className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Play className="h-4 w-4 text-primary" />
-                    )}
-                  </button>
+                  <>
+                    <button
+                      // For the active song, toggle play/pause in place — starting a fresh
+                      // playQueue here would restart it from 0 instead of resuming.
+                      onClick={() => (active ? toggle() : playQueue(sorted, i, context))}
+                      aria-label={active && isPlaying ? `Pause ${song.title}` : `Play ${song.title}`}
+                      className="hidden group-hover:block"
+                    >
+                      {active && isPlaying ? (
+                        <Pause className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Play className="h-4 w-4 text-primary" />
+                      )}
+                    </button>
+                    <span className="group-hover:hidden">
+                      {active && isPlaying ? <Volume2 className="h-4 w-4 text-primary" /> : i + 1}
+                    </span>
+                  </>
                 )}
               </span>
               <div className="flex min-w-0 items-center gap-3">

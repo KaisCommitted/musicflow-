@@ -371,33 +371,29 @@ export function SongTable({
                     className="h-4 w-4 cursor-pointer accent-primary"
                   />
                 ) : selectionActive ? (
-                  <>
-                    <input
-                      type="checkbox"
-                      checked={false}
-                      onChange={() => {}}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSelect(i, e.shiftKey);
-                      }}
-                      aria-label={`Select ${song.title}`}
-                      className="hidden h-4 w-4 cursor-pointer accent-primary group-hover:block"
-                    />
-                    <span className="group-hover:hidden">{i + 1}</span>
-                  </>
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => {}}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelect(i, e.shiftKey);
+                    }}
+                    aria-label={`Select ${song.title}`}
+                    className="hidden h-4 w-4 cursor-pointer accent-primary group-hover:block"
+                  />
                 ) : (
-                  <>
-                    <button
-                      onClick={() => playQueue(sorted, i, context)}
-                      aria-label={`Play ${song.title}`}
-                      className="hidden group-hover:block"
-                    >
+                  <button
+                    onClick={() => playQueue(sorted, i, context)}
+                    aria-label={`Play ${song.title}`}
+                    className="hidden group-hover:grid group-hover:place-items-center"
+                  >
+                    {active && isPlaying ? (
+                      <Volume2 className="h-4 w-4 text-primary" />
+                    ) : (
                       <Play className="h-4 w-4 text-primary" />
-                    </button>
-                    <span className="group-hover:hidden">
-                      {active && isPlaying ? <Volume2 className="h-4 w-4 text-primary" /> : i + 1}
-                    </span>
-                  </>
+                    )}
+                  </button>
                 )}
               </span>
               <div className="flex min-w-0 items-center gap-3">

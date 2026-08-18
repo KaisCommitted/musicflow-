@@ -442,10 +442,16 @@ export const submitLastfmScrobble = (payload: ScrobblePayload) =>
 /* A one-time export from a real browser to a static file — see server.py for why this is a
  * file, not a live browser read on every download. */
 
-/** Checks every installed browser for a real YouTube login and returns only the ones that
- * have one — takes a moment (each browser is a real, if quick, check), not instant. */
+/** Checks every installed browser for a real YouTube login and returns the ones that have
+ * one — takes a moment (each browser is a real, if quick, check), not instant. `locked` and
+ * `blocked` are different from "not found": those browsers exist and we couldn't even check
+ * them (open right now / Chromium's App-Bound Encryption) — worth telling apart from "sign in
+ * somewhere", since for all we know they already have. */
 export const scanYoutubeCookieBrowsers = () =>
-  req<{ browsers: string[] }>("/api/youtube-cookies/scan", { method: "POST" });
+  req<{ browsers: string[]; locked: string[]; blocked: string[] }>(
+    "/api/youtube-cookies/scan",
+    { method: "POST" },
+  );
 
 export const getYoutubeCookieStatus = () =>
   req<{ configured: boolean; browser: string }>("/api/youtube-cookies/status");

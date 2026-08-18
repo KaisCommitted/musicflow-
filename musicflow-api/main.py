@@ -90,20 +90,49 @@ def _has_youtube_auth(lines: list[str]) -> bool:
     )
 
 
-def scan_youtube_browsers() -> list[str]:
+def _classify_cookie_failure(e: Exception) -> str | None:
+    """yt-dlp raises plain, differently-worded exceptions for browser cookie failures rather
+    than distinct exception types, so the message text is the only way to tell these apart —
+    matched against yt-dlp's actual source (cookies.py) rather than guessed, since getting this
+    wrong means telling the user the wrong (or no) fix:
+      - "locked": the browser is currently running, so Windows won't let us even copy its
+        cookie database (a file lock, not encryption — yt-dlp issue #7271). Fully closing the
+        browser — including background/tray processes some of these keep alive after their
+        last window closes — usually clears this on its own.
+      - "blocked": the copy succeeded but decryption didn't. On Windows this is Chromium's
+        "App-Bound Encryption" (Chrome 127+, mid-2024, since adopted browser-by-browser), which
+        ties cookie decryption to the exact browser binary and blocks every outside tool, not
+        just yt-dlp (yt-dlp issue #10927). No known workaround; Firefox doesn't have it.
+    Returns None for anything else (not installed, no profile, ...) — those are just skipped."""
+    msg = str(e)
+    if "DPAPI" in msg:
+        return "blocked"
+    if "Could not copy" in msg:
+        return "locked"
+    return None
+
+
+def scan_youtube_browsers() -> dict:
     """Checks every supported browser for a real YouTube login (without persisting anything)
     so the frontend can offer only the ones that'll actually work, instead of a static list
-    the user has to already know the answer for. A browser that's locked, not installed, or
-    just has no YouTube login is skipped silently — this is a convenience scan, not a place
-    to surface per-browser errors."""
-    found = []
+    the user has to already know the answer for. A browser that's simply not installed, or
+    installed but never logged into YouTube, is skipped silently — a browser we couldn't even
+    read (see _classify_cookie_failure) is reported separately in "locked"/"blocked" instead,
+    since telling the user "no login found" would be actively misleading in either case: we
+    don't actually know there's no login, only that something stopped us from checking."""
+    found, locked, blocked = [], [], []
     for browser in SUPPORTED_COOKIE_BROWSERS:
         try:
             if _has_youtube_auth(_export_youtube_domains(browser)):
                 found.append(browser)
         except Exception as e:
+            kind = _classify_cookie_failure(e)
+            if kind == "locked":
+                locked.append(browser)
+            elif kind == "blocked":
+                blocked.append(browser)
             log.info("[youtube-cookies] scan skipped %s: %s", browser, e)
-    return found
+    return {"browsers": found, "locked": locked, "blocked": blocked}
 
 
 def setup_youtube_cookies(browser: str) -> dict:
@@ -115,6 +144,21 @@ def setup_youtube_cookies(browser: str) -> dict:
     try:
         kept = _export_youtube_domains(browser)
     except Exception as e:
+        kind = _classify_cookie_failure(e)
+        label = browser.capitalize()
+        if kind == "locked":
+            return {"error": (
+                f"{label} is currently open, which stops Windows from letting us read its "
+                f"cookies. Fully quit {label} — including background processes, not just the "
+                "window — and try again."
+            )}
+        if kind == "blocked":
+            return {"error": (
+                f"{label} blocks outside apps from reading its saved cookies — a security "
+                "feature every Chromium-based browser has had since mid-2024, with no known "
+                "workaround. Firefox doesn't have this restriction: sign into YouTube there "
+                "and connect that instead."
+            )}
         return {"error": f"Couldn't read cookies from {browser}: {e}"}
 
     if not _has_youtube_auth(kept):

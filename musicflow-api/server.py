@@ -2050,12 +2050,17 @@ def listenbrainz_disconnect():
 
 @app.route("/api/youtube-cookies/scan", methods=["POST"])
 def youtube_cookies_scan():
-    """Checks every supported browser for a real YouTube login and returns only the ones that
-    have one — lets the frontend offer a pick-from-what-actually-works list instead of a
-    static one the user has to already know the answer for. Deliberately never auto-picks
-    one itself: if more than one browser has a valid login (e.g. a deliberate secondary
-    account in one of them), which account gets used should stay an explicit choice."""
-    return jsonify({"browsers": scan_youtube_browsers()})
+    """Checks every supported browser for a real YouTube login and returns the ones that have
+    one — lets the frontend offer a pick-from-what-actually-works list instead of a static one
+    the user has to already know the answer for. Deliberately never auto-picks one itself: if
+    more than one browser has a valid login (e.g. a deliberate secondary account in one of
+    them), which account gets used should stay an explicit choice.
+
+    Also reports "locked" (browser currently open — closing it and retrying may just work) and
+    "blocked" (App-Bound Encryption, no fix) browsers separately — see scan_youtube_browsers.
+    The frontend needs to tell these apart from a plain miss, since "no login found" would be
+    wrong for either: we don't actually know, we just couldn't check."""
+    return jsonify(scan_youtube_browsers())
 
 
 @app.route("/api/youtube-cookies/status")

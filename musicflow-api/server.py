@@ -335,6 +335,13 @@ MAX_WORKERS = 3
 MAX_RETRY_CYCLES = 10
 
 
+def _is_block_error(error: str) -> bool:
+    """True for an error signature that means YouTube is blocking this IP/session outright,
+    not a transient/unrelated failure. Covers an outright 403 and yt-dlp's "confirm you're not
+    a bot" login wall, which is what anonymous downloads actually hit in practice."""
+    return "403" in error or ("confirm" in error.lower() and "bot" in error.lower())
+
+
 def process_job(job_id: str):
     job = jobs[job_id]
     folder = job["folder"]
@@ -378,11 +385,13 @@ def process_job(job_id: str):
     # Max time for retries: 10s per song
     max_duration = 10 * len(job["items"])
     job_start_time = time.time()
-    # True when every song in the previous cycle failed, specifically with a 403 — that pattern
-    # means YouTube is blocking this IP/pattern outright, not a transient blip (a mix of
-    # successes/failures, or non-403 errors, doesn't set this — retrying sooner is still right
-    # there). Hammering a real block again in a few seconds doesn't help and risks reinforcing
-    # whatever flagged it, so back off much longer than the normal between-cycle pause.
+    # True when every song in the previous cycle failed with a signature that means YouTube is
+    # blocking this IP/pattern outright, not a transient blip (a mix of successes/failures, or
+    # an unrelated error, doesn't set this — retrying sooner is still right there). Two known
+    # signatures: an outright 403, or yt-dlp's "confirm you're not a bot" login wall — the one
+    # anonymous downloads actually hit in practice. Hammering a real block again in a few
+    # seconds doesn't help and risks reinforcing whatever flagged it, so back off much longer
+    # than the normal between-cycle pause.
     blocked_signal = False
 
     for cycle in range(MAX_RETRY_CYCLES):
@@ -418,12 +427,12 @@ def process_job(job_id: str):
                 f.result()
 
         blocked_signal = bool(to_process) and all(
-            i["status"] == "error" and "403" in (i.get("error") or "") for i in to_process
+            i["status"] == "error" and _is_block_error(i.get("error") or "") for i in to_process
         )
         job["likely_blocked"] = blocked_signal
         if blocked_signal:
             log.info(
-                "[job %s] All %d songs failed with 403 this cycle — likely blocked, backing off longer",
+                "[job %s] All %d songs failed with a block signal this cycle — likely blocked, backing off longer",
                 job_id, len(to_process),
             )
 

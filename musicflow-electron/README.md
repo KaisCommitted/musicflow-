@@ -32,9 +32,10 @@ Runs PyInstaller (via `build:backend`) then `electron-builder --win`, producing
 `release/Musicflow Setup <version>.exe` — an NSIS installer, per-user install (no admin/UAC),
 unsigned (expect a Windows SmartScreen "unknown publisher" prompt the first run).
 
-`musicflow-api/bin/ffmpeg.exe` + `ffprobe.exe` must exist before building — they're gitignored
-(binary, not something to commit) and bundled by `musicflow-backend.spec`. Place your own copies
-there, or see `.github/workflows/release.yml` for where CI fetches them from.
+`musicflow-api/bin/ffmpeg.exe`, `ffprobe.exe`, and `deno.exe` must exist before building —
+they're gitignored (binary, not something to commit) and bundled by `musicflow-backend.spec`.
+Place your own copies there, or see `.github/workflows/release.yml` for where CI fetches them
+from.
 
 ## Releasing
 

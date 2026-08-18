@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
 from PIL import Image
-from main import find_ffmpeg, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, find_deno, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
 import scrobbling
@@ -76,7 +76,7 @@ class ProgressHook:
             self.item["progress"] = 100
 
 
-def process_query(item: dict, ffmpeg_path: str | None, existing_files: set[str], job: dict, folder: str, files_lock: threading.Lock = None):
+def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, existing_files: set[str], job: dict, folder: str, files_lock: threading.Lock = None):
     query = item["query"]
 
     # Step 1: Search
@@ -186,6 +186,8 @@ def process_query(item: dict, ffmpeg_path: str | None, existing_files: set[str],
     }
     if ffmpeg_path:
         ydl_opts["ffmpeg_location"] = ffmpeg_path
+    if deno_path:
+        ydl_opts["js_runtimes"] = {"deno": {"path": deno_path}}
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -315,6 +317,7 @@ def process_job(job_id: str):
     job = jobs[job_id]
     folder = job["folder"]
     ffmpeg_path = find_ffmpeg()
+    deno_path = find_deno()
     log.info("[job %s] Starting download job (%d songs)", job_id, len(job["items"]))
     _prevent_sleep()
     existing_files = {f.lower() for f in os.listdir(folder) if f.lower().endswith(".mp3")}
@@ -339,7 +342,7 @@ def process_job(job_id: str):
             item["error"] = "Cancelled"
             return
         throttle()
-        process_query(item, ffmpeg_path, existing_files, job, folder, files_lock)
+        process_query(item, ffmpeg_path, deno_path, existing_files, job, folder, files_lock)
         if item["status"] in ("done", "skipped"):
             with files_lock:
                 done_counter["count"] += 1
@@ -350,6 +353,12 @@ def process_job(job_id: str):
     # Max time for retries: 10s per song
     max_duration = 10 * len(job["items"])
     job_start_time = time.time()
+    # True when every song in the previous cycle failed, specifically with a 403 — that pattern
+    # means YouTube is blocking this IP/pattern outright, not a transient blip (a mix of
+    # successes/failures, or non-403 errors, doesn't set this — retrying sooner is still right
+    # there). Hammering a real block again in a few seconds doesn't help and risks reinforcing
+    # whatever flagged it, so back off much longer than the normal between-cycle pause.
+    blocked_signal = False
 
     for cycle in range(MAX_RETRY_CYCLES):
         if job.get("cancelled"):
@@ -371,7 +380,8 @@ def process_job(job_id: str):
                 item["status"] = "pending"
                 item["error"] = None
                 item["progress"] = 0
-            time.sleep(5 + random.uniform(1, 5))
+            wait = (45 + random.uniform(0, 15)) if blocked_signal else (5 + random.uniform(1, 5))
+            time.sleep(wait)
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             futures = []
@@ -381,6 +391,15 @@ def process_job(job_id: str):
                 futures.append(pool.submit(worker, item))
             for f in futures:
                 f.result()
+
+        blocked_signal = bool(to_process) and all(
+            i["status"] == "error" and "403" in (i.get("error") or "") for i in to_process
+        )
+        if blocked_signal:
+            log.info(
+                "[job %s] All %d songs failed with 403 this cycle — likely blocked, backing off longer",
+                job_id, len(to_process),
+            )
 
         # Check if all done
         errors_left = sum(1 for i in job["items"] if i["status"] == "error")

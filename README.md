@@ -70,7 +70,9 @@ pip install -r requirements.txt
 ```
 
 You'll also need `ffmpeg` — place `ffmpeg.exe`/`ffprobe.exe` in a `bin/` folder here, or have
-them on your PATH.
+them on your PATH. [Deno](https://deno.com/) is optional but recommended — yt-dlp uses it to
+solve YouTube's JS challenge for the best-quality audio formats; without it, some downloads
+fail with a 403 that a JS runtime would have avoided. Same `bin/` folder, or your PATH.
 
 ```bash
 py server.py
@@ -110,6 +112,7 @@ Open `http://localhost:5000`. Downloads go to a Docker volume.
 |-----------|---------|
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | YouTube search & audio download |
 | [ffmpeg](https://ffmpeg.org/) | Audio extraction & conversion |
+| [Deno](https://deno.com/) | JS runtime yt-dlp uses to solve YouTube's challenge |
 | [mutagen](https://mutagen.readthedocs.io/) | MP3 ID3 tag manipulation |
 | [syncedlyrics](https://github.com/rtcq/syncedlyrics) | Multi-provider lyrics search |
 | [Flask](https://flask.palletsprojects.com/) | Backend web server & API |

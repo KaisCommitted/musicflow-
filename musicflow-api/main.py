@@ -2,11 +2,9 @@ import glob
 import json
 import logging
 import os
-import random
 import re
 import shutil
 import sys
-import time
 import urllib.parse
 import urllib.request
 import yt_dlp
@@ -54,6 +52,23 @@ def find_ffmpeg() -> str | None:
                     if "ffmpeg.exe" in files:
                         return root
     return None
+
+
+def find_deno() -> str | None:
+    """A JS runtime yt-dlp needs to solve YouTube's JS challenge for its best audio formats —
+    without one, requests for those formats (what we ask for) 403, even though yt-dlp can often
+    still fall back to older, lower-quality formats that aren't gated the same way. Optional:
+    if not found, downloads just proceed without js_runtimes set (yt-dlp's own degraded-but-
+    working fallback), same best-effort spirit as everything else here."""
+    if getattr(sys, "frozen", False):
+        bundled = os.path.join(sys._MEIPASS, "bin", "deno.exe")
+        if os.path.isfile(bundled):
+            return bundled
+    else:
+        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "deno.exe")
+        if os.path.isfile(dev_bundled):
+            return dev_bundled
+    return shutil.which("deno")
 
 
 def get_first_video_link(query: str) -> tuple[str, str, str | None] | None:
@@ -343,56 +358,6 @@ def apply_metadata(mp3_path: str, metadata: dict | None, lyrics: str | None):
             pass
 
 
-def download_mp3(url: str, output_dir: str, query: str, max_retries: int = 3) -> str | None:
-    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in query).strip()
-    safe_name = re.sub(r'[\s_]*mp3$', '', safe_name, flags=re.IGNORECASE).strip()
-    ffmpeg_path = find_ffmpeg()
-    mp3_path = os.path.join(output_dir, f"{safe_name}.mp3")
-
-    for attempt in range(1, max_retries + 1):
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                },
-            ],
-            "outtmpl": os.path.join(output_dir, f"{safe_name}.%(ext)s"),
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            # Browser-like headers to avoid 403
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-            },
-            "retries": 3,
-            "fragment_retries": 3,
-            "extractor_retries": 3,
-            "sleep_interval": 1,
-            "max_sleep_interval": 5,
-        }
-        if ffmpeg_path:
-            ydl_opts["ffmpeg_location"] = ffmpeg_path
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
-                return mp3_path
-        except Exception as e:
-            print(f"        [RETRY {attempt}/{max_retries}] {type(e).__name__}: {e}")
-            if attempt < max_retries:
-                wait = 5 * attempt + random.uniform(1, 3)
-                print(f"        Waiting {wait:.0f}s before retry...")
-                time.sleep(wait)
-
-    return mp3_path if os.path.exists(mp3_path) else None
-
-
 def generate_playlist(mp3_paths: list[str], playlist_name: str, output_dir: str) -> str:
     """Generate an M3U8 playlist file from a list of MP3 paths."""
     safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in playlist_name).strip()
@@ -447,68 +412,3 @@ def parse_playlist_input(lines: list[str]) -> tuple[list[str], dict[str, list[in
 
     return queries, playlists
 
-
-def main():
-    input_file = sys.argv[1] if len(sys.argv) > 1 else "queries.txt"
-    output_dir = "downloads"
-    os.makedirs(output_dir, exist_ok=True)
-
-    try:
-        with open(input_file, "r", encoding="utf-8") as f:
-            queries = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        print(f"Error: File '{input_file}' not found.")
-        sys.exit(1)
-
-    print(f"Processing {len(queries)} search queries...\n")
-
-    results = []
-    for i, query in enumerate(queries):
-        result = get_first_video_link(query)
-        if result:
-            link, video_title, thumbnail_url = result
-            print(f"[FOUND] {query}  ->  {link}")
-            print(f"        Downloading MP3...")
-            try:
-                mp3 = download_mp3(link, output_dir, query)
-            except Exception as e:
-                mp3 = None
-                print(f"[ERR]   {type(e).__name__}: {e}")
-            if mp3:
-                artist, song_title = parse_artist_title(video_title)
-                metadata = fetch_music_metadata(artist, song_title, query)
-                lyrics = fetch_lyrics(artist, song_title, query, mp3)
-                if not metadata:
-                    metadata = {}
-                if not metadata.get("artwork_url") and thumbnail_url:
-                    metadata["artwork_url"] = thumbnail_url
-                apply_metadata(mp3, metadata, lyrics)
-                if metadata:
-                    print(f"[META]  {metadata.get('artist', '?')} - {metadata.get('title', '?')} ({metadata.get('album', '?')})")
-                if lyrics:
-                    print(f"[LYRICS] Embedded lyrics")
-                results.append(f"{query}  ->  {link}  ->  {mp3}")
-                print(f"[OK]    Saved to {mp3}")
-            else:
-                results.append(f"{query}  ->  {link}  ->  Download failed")
-                print(f"[FAIL]  MP3 download failed")
-        else:
-            results.append(f"{query}  ->  No results found")
-            print(f"[MISS]  {query}  ->  No results found")
-
-        # Pause between queries to avoid rate-limiting
-        if i < len(queries) - 1:
-            delay = random.uniform(3, 7)
-            print(f"        Waiting {delay:.0f}s before next query...")
-            time.sleep(delay)
-
-    # Write results to output file
-    with open("results.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(results) + "\n")
-
-    print(f"\nDone! Results saved to results.txt")
-    print(f"MP3 files saved to {output_dir}/")
-
-
-if __name__ == "__main__":
-    main()

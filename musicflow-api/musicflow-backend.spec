@@ -15,6 +15,10 @@ a = Analysis(
         ('static', 'static'),
         ('bin/ffmpeg.exe', 'bin'),
         ('bin/ffprobe.exe', 'bin'),
+        # yt-dlp needs a JS runtime to solve YouTube's JS challenge for its best audio formats —
+        # without one, downloads 403 even though extraction/search still works fine. See
+        # find_deno() in main.py.
+        ('bin/deno.exe', 'bin'),
     ],
     # yt-dlp ships its own PyInstaller hook (via pyinstaller-hooks-contrib) that already pulls
     # in its extractor modules and transitive deps (requests, urllib3, Cryptodome, ...)

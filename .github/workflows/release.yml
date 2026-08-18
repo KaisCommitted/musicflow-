@@ -50,6 +50,14 @@ jobs:
           $probe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
           Copy-Item $probe.FullName musicflow-api/bin/ffprobe.exe
 
+      # yt-dlp needs a JS runtime to solve YouTube's JS challenge for its best audio formats —
+      # without one, downloads 403 even though extraction/search still works fine.
+      - name: Fetch Deno (JS runtime yt-dlp needs for YouTube's challenge-solving)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -OutFile deno.zip
+          Expand-Archive deno.zip -DestinationPath musicflow-api/bin -Force
+
       - name: Freeze backend with PyInstaller
         working-directory: musicflow-api
         run: py -m PyInstaller musicflow-backend.spec --noconfirm

@@ -4,7 +4,9 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 import yt_dlp
@@ -135,11 +137,72 @@ def scan_youtube_browsers() -> dict:
     return {"browsers": found, "locked": locked, "blocked": blocked}
 
 
-def setup_youtube_cookies(browser: str) -> dict:
+# Only the browsers that can actually produce a "locked" classification need an entry here —
+# Firefox doesn't lock its cookie database the same way Chromium does, so it never hits that
+# failure and this mapping is never consulted for it.
+_BROWSER_PROCESS_NAMES = {
+    "chrome": "chrome.exe",
+    "edge": "msedge.exe",
+    "brave": "brave.exe",
+    "opera": "opera.exe",
+    "vivaldi": "vivaldi.exe",
+    "chromium": "chrome.exe",  # official Chromium builds still ship as chrome.exe
+}
+
+
+def _processes_running(exe: str) -> bool:
+    check = subprocess.run(
+        ["tasklist", "/FI", f"IMAGENAME eq {exe}"],
+        capture_output=True, text=True,
+    )
+    return exe.lower() in check.stdout.lower()
+
+
+def _close_browser_and_wait(browser: str, timeout: float = 6.0) -> bool:
+    """Closes every running process for this browser and waits for them to actually exit, so
+    the export attempt right after has a real shot at an unlocked cookie file. Graceful first —
+    a plain taskkill sends WM_CLOSE, giving any real open window (and anything it might be
+    asking the user, like an unsaved-changes prompt) a chance to close on its own terms — and
+    only escalates to a force-kill for whatever's left after a couple of seconds, which in
+    practice is the windowless background processes browsers keep alive after their last
+    visible window closes (GPU/renderer/keep-alive helpers), not real interactive state.
+    Best-effort and safe to call on an already-closed browser — it's just a no-op then. Returns
+    whether the browser is confirmed gone."""
+    exe = _BROWSER_PROCESS_NAMES.get(browser)
+    if not exe or not _processes_running(exe):
+        return True
+
+    subprocess.run(["taskkill", "/IM", exe, "/T"], capture_output=True, text=True)
+    graceful_deadline = time.monotonic() + min(2.0, timeout)
+    while time.monotonic() < graceful_deadline and _processes_running(exe):
+        time.sleep(0.3)
+
+    if _processes_running(exe):
+        subprocess.run(["taskkill", "/IM", exe, "/T", "/F"], capture_output=True, text=True)
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _processes_running(exe):
+            return True
+        time.sleep(0.3)
+    return False
+
+
+def setup_youtube_cookies(browser: str, close_first: bool = False) -> dict:
     """Same export as the scan, but for one specific (user-picked) browser, and this one
-    actually persists the result. Returns {"ok": True} or {"error": "..."}."""
+    actually persists the result. `close_first` is only meaningful for a browser we already
+    know is "locked" (see scan_youtube_browsers) — the frontend offers it as an explicit,
+    separately-labeled action rather than folding it into every connect attempt, since closing
+    someone's browser out from under them shouldn't be a side effect they didn't ask for.
+    Returns {"ok": True} or {"error": "..."}."""
     if browser not in SUPPORTED_COOKIE_BROWSERS:
         return {"error": f"Unsupported browser: {browser}"}
+
+    if close_first and not _close_browser_and_wait(browser):
+        return {"error": (
+            f"{browser.capitalize()} wouldn't fully close — it may be waiting on something "
+            "(like an unsaved-changes prompt). Close it manually and try again."
+        )}
 
     try:
         kept = _export_youtube_domains(browser)

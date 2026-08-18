@@ -2078,7 +2078,7 @@ def youtube_cookies_setup():
     browser = str(data.get("browser", "")).strip().lower()
     if not browser:
         return jsonify({"error": "Missing browser"}), 400
-    result = setup_youtube_cookies(browser)
+    result = setup_youtube_cookies(browser, close_first=bool(data.get("closeFirst")))
     if "error" in result:
         return jsonify(result), 400
     db.set_setting("youtubeCookiesBrowser", browser)

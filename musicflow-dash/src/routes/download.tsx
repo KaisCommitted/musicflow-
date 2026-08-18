@@ -160,12 +160,12 @@ function YoutubeLoginCard({
       .finally(() => setScanning(false));
   }, []);
 
-  const connect = async () => {
-    if (!browser) return;
+  const connectTo = async (b: string, closeFirst: boolean) => {
+    if (!b) return;
     setError(null);
     setConnecting(true);
     try {
-      await setupYoutubeCookies(browser);
+      await setupYoutubeCookies(b, closeFirst);
       onReconnected();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't connect.");
@@ -173,6 +173,7 @@ function YoutubeLoginCard({
       setConnecting(false);
     }
   };
+  const connect = () => connectTo(browser, false);
 
   if (dismissed) return null;
 
@@ -197,7 +198,7 @@ function YoutubeLoginCard({
           {scanning
             ? "Checking your browsers for a YouTube login…"
             : explainLocked
-              ? `${joinBrowserNames(locked)} ${locked.length > 1 ? "are" : "is"} open right now, which stops us from even checking ${locked.length > 1 ? "them" : "it"} for a YouTube login. Fully quit ${locked.length > 1 ? "them" : "it"} — background processes too, not just the window — then try again.`
+              ? `${joinBrowserNames(locked)} ${locked.length > 1 ? "are" : "is"} open right now, which stops us from even checking ${locked.length > 1 ? "them" : "it"} for a YouTube login — closing ${locked.length > 1 ? "them" : "it"} usually fixes this.`
               : explainBlocked
                 ? `${joinBrowserNames(blocked)} ${blocked.length > 1 ? "block" : "blocks"} outside apps from reading its saved cookies — a security feature every Chromium-based browser has had since mid-2024, not something we can fix. Firefox doesn't have this restriction, or skip this — downloads still work without it, just less reliably.`
                 : browsers.length === 0
@@ -208,7 +209,7 @@ function YoutubeLoginCard({
         </p>
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {scanning ? (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : browsers.length > 0 ? (
@@ -224,6 +225,26 @@ function YoutubeLoginCard({
             {connecting ? "Connecting…" : "Connect"}
           </button>
         )}
+        {/* Only for a browser we know is just *open* (locked), never for one that's DPAPI-
+         * blocked — closing it wouldn't change anything there. A distinct, explicitly-labeled
+         * button rather than folding this into "Connect" everywhere, since closing someone's
+         * browser is disruptive enough that clicking it should be its own clear choice. */}
+        {explainLocked &&
+          locked.map((b) => (
+            <button
+              key={b}
+              onClick={() => void connectTo(b, true)}
+              disabled={connecting}
+              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40"
+            >
+              {connecting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <img src={`/browser-icons/${b}.svg`} alt="" className="h-3.5 w-3.5" />
+              )}
+              {connecting ? "Connecting…" : `Close ${BROWSER_LABELS[b] ?? b} & Connect`}
+            </button>
+          ))}
         <button
           onClick={() => {
             sessionStorage.setItem(YOUTUBE_CARD_DISMISS_KEY, "1");

@@ -457,12 +457,20 @@ export const getYoutubeCookieStatus = () =>
   req<{ configured: boolean; browser: string }>("/api/youtube-cookies/status");
 
 /** Not routed through req() — the backend's error message here (e.g. "no YouTube login found
- * in firefox") is specific and actionable, worth showing as-is instead of a generic failure. */
-export const setupYoutubeCookies = async (browser: string): Promise<{ ok: true }> => {
+ * in firefox") is specific and actionable, worth showing as-is instead of a generic failure.
+ * `closeFirst` closes every process for `browser` before reading its cookies — only meaningful
+ * for a browser the scan reported as "locked" (currently open, which is what blocked us from
+ * reading it in the first place). Callers should only ever set this from an explicit,
+ * separately-labeled "close & connect" action, never as a default — closing someone's browser
+ * shouldn't be a side effect of a plain "Connect" click. */
+export const setupYoutubeCookies = async (
+  browser: string,
+  closeFirst = false,
+): Promise<{ ok: true }> => {
   const res = await fetch(`${BASE}/api/youtube-cookies/setup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ browser }),
+    body: JSON.stringify({ browser, closeFirst }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);

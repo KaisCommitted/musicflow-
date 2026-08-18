@@ -14,6 +14,7 @@ import {
   type JobStatus,
 } from "@/lib/api";
 import type { Song } from "@/lib/api";
+import { useLibrary } from "@/store/library";
 
 const JOB_LOST_MESSAGE = "This job no longer exists on the server (likely a backend restart) — start a new one.";
 
@@ -107,6 +108,10 @@ export const useDownload = create<DownloadState>()(
             const s = await getJobStatus(jobId);
             set({ status: s, items: s.recent ?? [], error: null });
             if (s.finished) {
+              // At least one song landed on disk (with its tags — process_query only marks an
+              // item "done" after metadata/artwork are written) — rescan so it shows up in the
+              // Library tab without waiting for the next app launch or a manual refresh.
+              if (s.done > 0) void useLibrary.getState().refresh();
               // Keep polling a few more times to catch final metadata completions
               let extra = 3;
               const finalPoll = setInterval(async () => {

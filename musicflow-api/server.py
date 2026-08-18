@@ -1226,6 +1226,9 @@ def _scan_songs(folder: str) -> list[dict]:
     cached = {s["path"]: s for s in db.get_cached_songs(folder)}
     current_paths = set()
     songs = []
+    # date_added per song, in lockstep with `songs` — used to order newest-first below.
+    # Not put on the song dict itself since the frontend has no use for it, only the order.
+    dates = []
 
     for f in sorted(os.listdir(folder)):
         if not f.lower().endswith(".mp3"):
@@ -1256,6 +1259,7 @@ def _scan_songs(folder: str) -> list[dict]:
             if c["has_artwork"]:
                 song["artwork"] = f"/api/cover?path={urllib.parse.quote(os.path.basename(filepath))}"
             songs.append(song)
+            dates.append(c["date_added"])
             continue
 
         # Read ID3 tags for new/modified files
@@ -1310,15 +1314,22 @@ def _scan_songs(folder: str) -> list[dict]:
 
         song["has_lyrics"] = has_lyrics
 
-        # Cache in db
+        # Cache in db. date_added is preserved by upsert_song if this path already had a row
+        # (e.g. a re-tag or auto-fetched lyrics touched the file) — `c` still holds that old
+        # row here since it came from the pre-scan cache map, unaffected by this file's stat
+        # mismatch. Only a genuinely new path gets "now".
         db.upsert_song(filepath, song["title"], song["artist"], song.get("album", ""),
                        song["duration"], track, year, has_artwork, has_lyrics,
                        file_size, last_modified, genre)
         songs.append(song)
+        dates.append(c["date_added"] if c else time.time())
 
     # Remove stale entries for deleted files
     db.remove_stale_songs(folder, current_paths)
-    return songs
+
+    # Newest-added first — how songs show up by default in the library.
+    order = sorted(range(len(songs)), key=lambda i: dates[i], reverse=True)
+    return [songs[i] for i in order]
 
 
 def _normalize_key(text: str) -> str:

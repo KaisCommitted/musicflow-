@@ -5,6 +5,7 @@ Stored at %APPDATA%/Musicflow/data.db — invisible to the user.
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 DB_DIR = os.path.join(os.environ.get("APPDATA", str(Path.home())), "Musicflow")
@@ -43,7 +44,8 @@ def init_db():
             has_artwork INTEGER NOT NULL DEFAULT 0,
             has_lyrics INTEGER NOT NULL DEFAULT 0,
             file_size INTEGER NOT NULL DEFAULT 0,
-            last_modified REAL NOT NULL DEFAULT 0
+            last_modified REAL NOT NULL DEFAULT 0,
+            date_added REAL NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS playlists (
@@ -94,8 +96,10 @@ def init_db():
     # Added after the initial release — CREATE TABLE IF NOT EXISTS above won't add a column
     # to a songs table that already exists from before, so it needs its own migration step.
     _ensure_column(conn, "songs", "genre", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "songs", "date_added", "REAL NOT NULL DEFAULT 0")
     conn.commit()
     _backfill_genre_once(conn)
+    _backfill_date_added_once(conn)
 
 
 def _backfill_genre_once(conn: sqlite3.Connection):
@@ -109,6 +113,18 @@ def _backfill_genre_once(conn: sqlite3.Connection):
     conn.execute("UPDATE songs SET last_modified = 0 WHERE genre = ''")
     conn.commit()
     set_setting("genreBackfillDone", "true")
+
+
+def _backfill_date_added_once(conn: sqlite3.Connection):
+    """Libraries scanned before date_added existed all have it at 0 — fall back to
+    last_modified (the mtime at last scan) as a one-time best-effort stand-in, since there's
+    no better signal for files that already existed before this column did. Rows added from
+    here on get a real date_added at first insert and keep it fixed after that."""
+    if get_setting("dateAddedBackfillDone", "") == "true":
+        return
+    conn.execute("UPDATE songs SET date_added = last_modified WHERE date_added = 0")
+    conn.commit()
+    set_setting("dateAddedBackfillDone", "true")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str):
@@ -141,12 +157,20 @@ def get_all_settings() -> dict:
 def upsert_song(path: str, title: str, artist: str, album: str, duration: float,
                 track: int | None, year: int | None, has_artwork: bool, has_lyrics: bool,
                 file_size: int, last_modified: float, genre: str = ""):
+    """Insert or update a song's cached tag data. date_added is set only on first insert and
+    left alone on every later update — so a file whose tags get rewritten (e.g. lyrics fetched
+    automatically on play) doesn't jump back to the top of a "newest first" library."""
     get_conn().execute("""
-        INSERT OR REPLACE INTO songs (path, title, artist, album, duration, track, year,
-                                      has_artwork, has_lyrics, file_size, last_modified, genre)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO songs (path, title, artist, album, duration, track, year,
+                           has_artwork, has_lyrics, file_size, last_modified, genre, date_added)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            title=excluded.title, artist=excluded.artist, album=excluded.album,
+            duration=excluded.duration, track=excluded.track, year=excluded.year,
+            has_artwork=excluded.has_artwork, has_lyrics=excluded.has_lyrics,
+            file_size=excluded.file_size, last_modified=excluded.last_modified, genre=excluded.genre
     """, (path, title, artist, album, duration, track, year,
-          int(has_artwork), int(has_lyrics), file_size, last_modified, genre))
+          int(has_artwork), int(has_lyrics), file_size, last_modified, genre, time.time()))
     get_conn().commit()
 
 

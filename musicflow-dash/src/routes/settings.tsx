@@ -10,6 +10,8 @@ import {
   completeLastfmAuth,
   disconnectLastfm,
   disconnectListenbrainz,
+  disconnectYoutubeCookies,
+  getYoutubeCookieStatus,
   importBackup,
   startLastfmAuth,
   validateListenbrainzToken,
@@ -461,6 +463,46 @@ function LastfmSection({
   );
 }
 
+const BROWSER_LABELS: Record<string, string> = {
+  chrome: "Chrome", firefox: "Firefox", edge: "Edge", brave: "Brave", opera: "Opera",
+  vivaldi: "Vivaldi", chromium: "Chromium",
+};
+
+/** Status + disconnect only — connecting happens over on the Download page, reactively, only
+ * once a job actually shows signs of needing it (a run of 403s). Settings isn't where that
+ * flow starts, just where you can see it's on and turn it off. */
+function YoutubeSection() {
+  const [status, setStatusState] = useState<{ configured: boolean; browser: string } | null>(null);
+
+  const refresh = () => void getYoutubeCookieStatus().then(setStatusState);
+  useEffect(refresh, []);
+
+  const disconnect = async () => {
+    await disconnectYoutubeCookies();
+    refresh();
+  };
+
+  return (
+    <Row
+      title="YouTube connection"
+      description={
+        status?.configured
+          ? `Connected via ${BROWSER_LABELS[status.browser] ?? status.browser}.`
+          : "Not connected. Musicflow will offer to connect if downloads start failing the way they do when YouTube blocks anonymous requests."
+      }
+    >
+      {status?.configured && (
+        <button
+          onClick={() => void disconnect()}
+          className="rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+        >
+          Disconnect
+        </button>
+      )}
+    </Row>
+  );
+}
+
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
 
@@ -574,6 +616,13 @@ function SettingsPage() {
       </h2>
       <div className="mt-3 max-w-3xl space-y-3">
         <DiscordSection settings={settings} set={set} />
+      </div>
+
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        YouTube
+      </h2>
+      <div className="mt-3 max-w-3xl space-y-3">
+        <YoutubeSection />
       </div>
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

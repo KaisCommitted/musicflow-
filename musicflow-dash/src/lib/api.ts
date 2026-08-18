@@ -3,8 +3,6 @@
  * All network access in the app goes through this file.
  */
 
-import type { YoutubeLoginCookie } from "./electronBridge";
-
 const BASE = "";
 
 /** Thrown by req() on a non-2xx response. Carries the HTTP status so callers can
@@ -441,20 +439,38 @@ export const submitLastfmScrobble = (payload: ScrobblePayload) =>
   });
 
 /* ------------------------------- YouTube login (cookies) ------------------------------ */
-/* Sign-in happens once in Musicflow's own in-app window (see electronBridge's
- * openYoutubeLogin), exported to a static file — see server.py for why a file rather than a
- * live read on every download. */
+/* A one-time export from a real browser to a static file — see server.py for why this is a
+ * file, not a live browser read on every download. */
 
-export const getYoutubeCookieStatus = () => req<{ configured: boolean }>("/api/youtube-cookies/status");
+/** Checks every installed browser for a real YouTube login and returns the ones that have
+ * one — takes a moment (each browser is a real, if quick, check), not instant. `locked` and
+ * `blocked` are different from "not found": those browsers exist and we couldn't even check
+ * them (open right now / Chromium's App-Bound Encryption) — worth telling apart from "sign in
+ * somewhere", since for all we know they already have. */
+export const scanYoutubeCookieBrowsers = () =>
+  req<{ browsers: string[]; locked: string[]; blocked: string[] }>(
+    "/api/youtube-cookies/scan",
+    { method: "POST" },
+  );
 
-/** Not routed through req() — the backend's error message here is specific and actionable
- * ("that didn't look like a completed login"), worth showing as-is instead of a generic
- * failure. `cookies` comes straight from electronBridge's openYoutubeLogin(). */
-export const setupYoutubeCookies = async (cookies: YoutubeLoginCookie[]): Promise<{ ok: true }> => {
+export const getYoutubeCookieStatus = () =>
+  req<{ configured: boolean; browser: string }>("/api/youtube-cookies/status");
+
+/** Not routed through req() — the backend's error message here (e.g. "no YouTube login found
+ * in firefox") is specific and actionable, worth showing as-is instead of a generic failure.
+ * `closeFirst` closes every process for `browser` before reading its cookies — only meaningful
+ * for a browser the scan reported as "locked" (currently open, which is what blocked us from
+ * reading it in the first place). Callers should only ever set this from an explicit,
+ * separately-labeled "close & connect" action, never as a default — closing someone's browser
+ * shouldn't be a side effect of a plain "Connect" click. */
+export const setupYoutubeCookies = async (
+  browser: string,
+  closeFirst = false,
+): Promise<{ ok: true }> => {
   const res = await fetch(`${BASE}/api/youtube-cookies/setup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cookies }),
+    body: JSON.stringify({ browser, closeFirst }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);

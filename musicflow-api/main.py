@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -16,14 +17,22 @@ import db
 
 log = logging.getLogger("musicflow")
 
+# Browsers yt-dlp knows how to read cookies from — kept here (not just inline in server.py)
+# so the frontend's dropdown and the backend's validation always agree on what's offered.
+# yt-dlp also supports safari and whale, but Safari hasn't shipped on Windows in over a
+# decade (Musicflow is Windows-only) and Whale (Naver, Korea-only) is niche enough that a
+# clean icon for it doesn't exist anywhere reasonable to source — not worth listing either.
+SUPPORTED_COOKIE_BROWSERS = ["chrome", "firefox", "edge", "brave", "opera", "vivaldi", "chromium"]
+
 # Auth cookies actually present on a real logged-in session — used to confirm the export
 # found a genuine login rather than silently "succeeding" with an empty/logged-out result.
 _YOUTUBE_AUTH_COOKIE_NAMES = {"SAPISID", "SID", "__Secure-3PSID", "LOGIN_INFO"}
-# The in-app sign-in window (musicflow-electron's "youtube-login:open") is a dedicated session
-# used for nothing else, but every cookie from it is filtered through this anyway — cheap
-# insurance, and it keeps the export logic identical to what it'd need if that ever changed.
-# Google's own SSO cookies that make YouTube auth work are scoped to .google.com, not
-# .youtube.com specifically, so that's as narrow as this can get without breaking the login.
+# yt-dlp's browser export pulls the *entire* cookie jar (every site, not just YouTube) — a
+# logged-in-everywhere browser profile can carry cookies for dozens of unrelated services
+# (banking, email, work tools, ...). Google's own SSO cookies that make YouTube auth work are
+# scoped to .google.com, not .youtube.com specifically, so that's as narrow as this can get
+# without breaking the login — but everything outside these two is dropped before the file
+# ever touches disk.
 _COOKIE_KEEP_DOMAINS = ("youtube.com", "google.com")
 
 
@@ -42,6 +51,40 @@ def _cookie_line_domain(line: str) -> str | None:
     return parts[0].lstrip(".") if len(parts) == 7 else None
 
 
+def _export_youtube_domains(browser: str) -> list[str]:
+    """Exports cookies from the given browser via yt-dlp's own extraction and keeps only the
+    domains YouTube login actually needs — everything else is discarded before it's ever
+    written anywhere persistent. Raises on failure (bad browser, locked profile, ...) rather
+    than returning an error dict, since both callers below want different things on failure."""
+    raw_path = _youtube_cookies_path() + f".{browser}.raw"
+    try:
+        with yt_dlp.YoutubeDL({
+            "cookiesfrombrowser": (browser, None, None, None),
+            "cookiefile": raw_path,
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+        }):
+            pass
+        if not os.path.isfile(raw_path):
+            return []
+        with open(raw_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    finally:
+        try:
+            os.remove(raw_path)
+        except OSError:
+            pass
+
+    return [
+        line for line in lines
+        if line.startswith("#") or (
+            (domain := _cookie_line_domain(line)) is not None
+            and domain.endswith(_COOKIE_KEEP_DOMAINS)
+        )
+    ]
+
+
 def _has_youtube_auth(lines: list[str]) -> bool:
     return any(
         not line.startswith("#") and line.split("\t")[5] in _YOUTUBE_AUTH_COOKIE_NAMES
@@ -49,51 +92,143 @@ def _has_youtube_auth(lines: list[str]) -> bool:
     )
 
 
-def _cookie_to_netscape_line(cookie: dict) -> str | None:
-    """Converts one cookie from Electron's session.cookies API (see musicflow-electron's
-    "youtube-login:open" handler) into a Netscape-format line — the same format yt-dlp's
-    cookiefile option already expects, so nothing downstream needs to know or care that these
-    came from Musicflow's own sign-in window rather than a browser's cookie store. Returns None
-    for anything too malformed to use rather than raising — one odd cookie shouldn't sink the
-    whole login."""
-    domain, name, value = cookie.get("domain"), cookie.get("name"), cookie.get("value")
-    if not domain or not name or value is None:
-        return None
-    include_subdomains = "FALSE" if cookie.get("hostOnly") else "TRUE"
-    path = cookie.get("path") or "/"
-    secure = "TRUE" if cookie.get("secure") else "FALSE"
-    expiry = cookie.get("expirationDate")
-    # Session-only cookies (no expirationDate) shouldn't be written as already-expired — that'd
-    # make yt-dlp treat them as unusable the moment they're read back. YouTube's real auth
-    # cookies are long-lived in practice; this fallback only matters for the rare stray without one.
-    expiry_str = str(int(expiry)) if expiry else str(int(time.time()) + 60 * 60 * 24 * 180)
-    return f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expiry_str}\t{name}\t{value}\n"
+def _classify_cookie_failure(e: Exception) -> str | None:
+    """yt-dlp raises plain, differently-worded exceptions for browser cookie failures rather
+    than distinct exception types, so the message text is the only way to tell these apart —
+    matched against yt-dlp's actual source (cookies.py) rather than guessed, since getting this
+    wrong means telling the user the wrong (or no) fix:
+      - "locked": the browser is currently running, so Windows won't let us even copy its
+        cookie database (a file lock, not encryption — yt-dlp issue #7271). Fully closing the
+        browser — including background/tray processes some of these keep alive after their
+        last window closes — usually clears this on its own.
+      - "blocked": the copy succeeded but decryption didn't. On Windows this is Chromium's
+        "App-Bound Encryption" (Chrome 127+, mid-2024, since adopted browser-by-browser), which
+        ties cookie decryption to the exact browser binary and blocks every outside tool, not
+        just yt-dlp (yt-dlp issue #10927). No known workaround; Firefox doesn't have it.
+    Returns None for anything else (not installed, no profile, ...) — those are just skipped."""
+    msg = str(e)
+    if "DPAPI" in msg:
+        return "blocked"
+    if "Could not copy" in msg:
+        return "locked"
+    return None
 
 
-def setup_youtube_cookies_from_electron(cookies: list[dict]) -> dict:
-    """Persists a login the user just completed in Musicflow's own in-app sign-in window (see
-    musicflow-electron's "youtube-login:open" handler) — the frontend calls this right after
-    that window resolves with a real session. Deliberately not reading cookies from any of the
-    user's actual installed browsers: Chromium's "App-Bound Encryption" (Chrome 127+, adopted
-    since by Edge, Brave, and the rest) blocks every outside tool from doing that, with no known
-    workaround — see yt-dlp issue #10927. Signing in inside Musicflow's own Electron session
-    sidesteps the problem entirely rather than working around it: reading cookies from a session
-    the app itself owns is a plain first-party API call, not a decrypt-someone-else's-storage
-    problem in the first place. Returns {"ok": True} or {"error": "..."}."""
-    lines = []
-    for cookie in cookies:
-        line = _cookie_to_netscape_line(cookie)
-        if line is None:
-            continue
-        domain = _cookie_line_domain(line)
-        if domain is not None and domain.endswith(_COOKIE_KEEP_DOMAINS):
-            lines.append(line)
+def scan_youtube_browsers() -> dict:
+    """Checks every supported browser for a real YouTube login (without persisting anything)
+    so the frontend can offer only the ones that'll actually work, instead of a static list
+    the user has to already know the answer for. A browser that's simply not installed, or
+    installed but never logged into YouTube, is skipped silently — a browser we couldn't even
+    read (see _classify_cookie_failure) is reported separately in "locked"/"blocked" instead,
+    since telling the user "no login found" would be actively misleading in either case: we
+    don't actually know there's no login, only that something stopped us from checking."""
+    found, locked, blocked = [], [], []
+    for browser in SUPPORTED_COOKIE_BROWSERS:
+        try:
+            if _has_youtube_auth(_export_youtube_domains(browser)):
+                found.append(browser)
+        except Exception as e:
+            kind = _classify_cookie_failure(e)
+            if kind == "locked":
+                locked.append(browser)
+            elif kind == "blocked":
+                blocked.append(browser)
+            log.info("[youtube-cookies] scan skipped %s: %s", browser, e)
+    return {"browsers": found, "locked": locked, "blocked": blocked}
 
-    if not _has_youtube_auth(lines):
-        return {"error": "That didn't look like a completed YouTube login — try again."}
+
+# Only the browsers that can actually produce a "locked" classification need an entry here —
+# Firefox doesn't lock its cookie database the same way Chromium does, so it never hits that
+# failure and this mapping is never consulted for it.
+_BROWSER_PROCESS_NAMES = {
+    "chrome": "chrome.exe",
+    "edge": "msedge.exe",
+    "brave": "brave.exe",
+    "opera": "opera.exe",
+    "vivaldi": "vivaldi.exe",
+    "chromium": "chrome.exe",  # official Chromium builds still ship as chrome.exe
+}
+
+
+def _processes_running(exe: str) -> bool:
+    check = subprocess.run(
+        ["tasklist", "/FI", f"IMAGENAME eq {exe}"],
+        capture_output=True, text=True,
+    )
+    return exe.lower() in check.stdout.lower()
+
+
+def _close_browser_and_wait(browser: str, timeout: float = 6.0) -> bool:
+    """Closes every running process for this browser and waits for them to actually exit, so
+    the export attempt right after has a real shot at an unlocked cookie file. Graceful first —
+    a plain taskkill sends WM_CLOSE, giving any real open window (and anything it might be
+    asking the user, like an unsaved-changes prompt) a chance to close on its own terms — and
+    only escalates to a force-kill for whatever's left after a couple of seconds, which in
+    practice is the windowless background processes browsers keep alive after their last
+    visible window closes (GPU/renderer/keep-alive helpers), not real interactive state.
+    Best-effort and safe to call on an already-closed browser — it's just a no-op then. Returns
+    whether the browser is confirmed gone."""
+    exe = _BROWSER_PROCESS_NAMES.get(browser)
+    if not exe or not _processes_running(exe):
+        return True
+
+    subprocess.run(["taskkill", "/IM", exe, "/T"], capture_output=True, text=True)
+    graceful_deadline = time.monotonic() + min(2.0, timeout)
+    while time.monotonic() < graceful_deadline and _processes_running(exe):
+        time.sleep(0.3)
+
+    if _processes_running(exe):
+        subprocess.run(["taskkill", "/IM", exe, "/T", "/F"], capture_output=True, text=True)
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _processes_running(exe):
+            return True
+        time.sleep(0.3)
+    return False
+
+
+def setup_youtube_cookies(browser: str, close_first: bool = False) -> dict:
+    """Same export as the scan, but for one specific (user-picked) browser, and this one
+    actually persists the result. `close_first` is only meaningful for a browser we already
+    know is "locked" (see scan_youtube_browsers) — the frontend offers it as an explicit,
+    separately-labeled action rather than folding it into every connect attempt, since closing
+    someone's browser out from under them shouldn't be a side effect they didn't ask for.
+    Returns {"ok": True} or {"error": "..."}."""
+    if browser not in SUPPORTED_COOKIE_BROWSERS:
+        return {"error": f"Unsupported browser: {browser}"}
+
+    if close_first and not _close_browser_and_wait(browser):
+        return {"error": (
+            f"{browser.capitalize()} wouldn't fully close — it may be waiting on something "
+            "(like an unsaved-changes prompt). Close it manually and try again."
+        )}
+
+    try:
+        kept = _export_youtube_domains(browser)
+    except Exception as e:
+        kind = _classify_cookie_failure(e)
+        label = browser.capitalize()
+        if kind == "locked":
+            return {"error": (
+                f"{label} is currently open, which stops Windows from letting us read its "
+                f"cookies. Fully quit {label} — including background processes, not just the "
+                "window — and try again."
+            )}
+        if kind == "blocked":
+            return {"error": (
+                f"{label} blocks outside apps from reading its saved cookies — a security "
+                "feature every Chromium-based browser has had since mid-2024, with no known "
+                "workaround. Firefox doesn't have this restriction: sign into YouTube there "
+                "and connect that instead."
+            )}
+        return {"error": f"Couldn't read cookies from {browser}: {e}"}
+
+    if not _has_youtube_auth(kept):
+        return {"error": f"No YouTube login found in {browser} — sign in there first, then try again."}
 
     with open(_youtube_cookies_path(), "w", encoding="utf-8") as f:
-        f.writelines(lines)
+        f.writelines(kept)
     return {"ok": True}
 
 

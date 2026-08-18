@@ -343,9 +343,15 @@ MAX_RETRY_CYCLES = 10
 
 def _is_block_error(error: str) -> bool:
     """True for an error signature that means YouTube is blocking this IP/session outright,
-    not a transient/unrelated failure. Covers an outright 403 and yt-dlp's "confirm you're not
-    a bot" login wall, which is what anonymous downloads actually hit in practice."""
-    return "403" in error or ("confirm" in error.lower() and "bot" in error.lower())
+    not a transient/unrelated failure. Covers an outright 403, yt-dlp's "confirm you're not a
+    bot" login wall, and "Requested format is not available" — confirmed by hand this last one
+    is what anonymous downloads get instead of the bot wall when YouTube SABR-forces the
+    anonymous client into offering literally no downloadable stream for a video (not even a
+    combined one) rather than rejecting the request outright. It can in rare cases mean
+    something reconnecting won't fix (age/region-locked, a broken listing), but in practice this
+    is the same anonymous-access wall — worth the false positive to actually catch it."""
+    low = error.lower()
+    return "403" in error or ("confirm" in low and "bot" in low) or "requested format is not available" in low
 
 
 def process_job(job_id: str):

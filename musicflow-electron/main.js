@@ -198,7 +198,13 @@ const YOUTUBE_LOGIN_PARTITION = "persist:youtube-login";
 // standard fix other Electron apps use for exactly this.
 const DESKTOP_CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const YOUTUBE_AUTH_COOKIE_NAMES = new Set(["SAPISID", "SID", "__Secure-3PSID", "LOGIN_INFO"]);
+// Narrower than main.py's _YOUTUBE_AUTH_COOKIE_NAMES on purpose: that set (which also includes
+// LOGIN_INFO) validates a *finished* login after the fact, batching everything a real session
+// left behind. Here it's the live trigger checked on every single cookie write from the moment
+// the window opens — LOGIN_INFO isn't reliably auth-only (YouTube can set it pre-login too), so
+// using it as the trigger risks firing (and closing the window) before a real login happens.
+// SID/SAPISID/__Secure-3PSID are only ever issued on actual authentication.
+const YOUTUBE_AUTH_TRIGGER_COOKIE_NAMES = new Set(["SAPISID", "SID", "__Secure-3PSID"]);
 
 async function currentYoutubeLoginCookies(loginSession) {
   const [youtube, google] = await Promise.all([
@@ -239,11 +245,14 @@ ipcMain.handle("youtube-login:open", () => {
       loginSession.cookies.removeListener("changed", onCookieChange);
       win.removeListener("closed", onClosed);
       resolve(result);
-      if (!win.isDestroyed()) win.close();
+      if (!win.isDestroyed()) {
+        win.webContents.removeListener("did-fail-load", onFailLoad);
+        win.close();
+      }
     };
 
     const onCookieChange = (_event, cookie, _cause, removed) => {
-      if (settled || removed || !YOUTUBE_AUTH_COOKIE_NAMES.has(cookie.name)) return;
+      if (settled || removed || !YOUTUBE_AUTH_TRIGGER_COOKIE_NAMES.has(cookie.name)) return;
       // A real login lands several cookies across a couple of redirects, not all in the same
       // tick — debounce briefly after the first sign of one so the export isn't missing the
       // rest of them.
@@ -255,12 +264,29 @@ ipcMain.handle("youtube-login:open", () => {
     };
     const onClosed = () => finish({ ok: false });
 
+    // -3 (ERR_ABORTED) on the main frame fires constantly for entirely normal reasons — a
+    // page-initiated redirect (which is exactly what YouTube's own load sequence does; it
+    // reloads itself with a "?themeRefresh=1" style param) supersedes the in-flight navigation
+    // before it finishes, and Chromium reports that as the original one "failing" even though
+    // the page goes on to load completely normally. Treating that as fatal was the actual bug
+    // here — it closed the window (which aborts whatever was still loading, compounding it)
+    // over what's often just an internal reload. Only a real failure — wrong error code, or a
+    // subframe/ad/embed — is worth surfacing; login success is still entirely decided by
+    // onCookieChange above, independent of how many redirects got the page there.
+    const onFailLoad = (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3) return;
+      log(`[youtube-login] failed to load (${errorCode} ${errorDescription}): ${validatedURL}`);
+      finish({ ok: false });
+    };
+
     loginSession.cookies.on("changed", onCookieChange);
     win.on("closed", onClosed);
+    win.webContents.on("did-fail-load", onFailLoad);
 
     win.loadURL("https://www.youtube.com/").catch((err) => {
-      log("[youtube-login] failed to load:", err.message);
-      finish({ ok: false });
+      // Not fatal by itself — see onFailLoad above for why. Logged only so a genuinely broken
+      // load still leaves a trace.
+      log("[youtube-login] initial navigation didn't settle (often benign):", err.message);
     });
   });
 });

@@ -296,6 +296,35 @@ def find_deno() -> str | None:
     return shutil.which("deno")
 
 
+def find_node() -> str | None:
+    """Node.js — needed to run the bundled PO token provider (see find_pot_server), which is
+    what lets anonymous downloads use YouTube's "web_safari" client instead of getting stuck
+    with whatever unauthenticated client yt-dlp falls back to on its own (see process_query's
+    extractor_args for why that fallback isn't good enough by itself). Optional, same as Deno:
+    without it, downloads just proceed without a PO token."""
+    if getattr(sys, "frozen", False):
+        bundled = os.path.join(sys._MEIPASS, "bin", "node.exe")
+        if os.path.isfile(bundled):
+            return bundled
+    else:
+        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "node.exe")
+        if os.path.isfile(dev_bundled):
+            return dev_bundled
+    return shutil.which("node")
+
+
+def find_pot_server() -> str | None:
+    """Directory for the bundled bgutil-ytdlp-pot-provider server (build/ + node_modules/ +
+    package.json — see musicflow-backend.spec) — passed to yt-dlp as the PO token provider's
+    server_home. Only useful alongside find_node(); both are optional, same best-effort spirit
+    as ffmpeg/Deno."""
+    if getattr(sys, "frozen", False):
+        bundled = os.path.join(sys._MEIPASS, "bin", "bgutil-server")
+    else:
+        bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "bgutil-server")
+    return bundled if os.path.isdir(bundled) else None
+
+
 def get_first_video_link(query: str) -> tuple[str, str, str | None] | None:
     """Search YouTube and return the first result that is an actual video (not a channel)."""
     ydl_opts = {

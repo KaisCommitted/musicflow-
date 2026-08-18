@@ -7,7 +7,7 @@
 # onedir starts near-instantly at the cost of shipping a folder instead of one exe — fine here
 # since electron-builder bundles the whole folder as an extraResource either way.
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 a = Analysis(
     ['electron_main.py'],
@@ -25,11 +25,26 @@ a = Analysis(
         # .py) — PyInstaller's import tracing won't pick those up on its own. Bundling them
         # locally like this means yt-dlp never needs to fetch them from GitHub at runtime.
         *collect_data_files('yt_dlp_ejs'),
+        # PO token provider for anonymous downloads — see find_node()/find_pot_server() in
+        # main.py for why this matters (yt-dlp's default client fallback 403s even when a
+        # login is never involved; a PO token fixes what cookies fix for a different reason).
+        # node.exe is a standalone binary (verified: no other DLLs needed alongside it), same
+        # bundling shape as ffmpeg/deno. bgutil-server/ is bgutil-ytdlp-pot-provider's server
+        # component pre-built once (npm ci && npx tsc, pruned to production deps only — see
+        # .github/workflows/release.yml) rather than built on every CI run or on the end
+        # user's machine, neither of which should need a Node/npm toolchain just to run this.
+        ('bin/node.exe', 'bin'),
+        ('bin/bgutil-server', 'bin/bgutil-server'),
     ],
     # yt-dlp ships its own PyInstaller hook (via pyinstaller-hooks-contrib) that already pulls
     # in its extractor modules and transitive deps (requests, urllib3, Cryptodome, ...)
     # automatically — no manual collect_all needed here.
-    hiddenimports=['syncedlyrics', 'pypresence'],
+    #
+    # bgutil-ytdlp-pot-provider is different: it's a yt-dlp *plugin*, discovered at runtime by
+    # scanning the yt_dlp_plugins namespace package rather than being imported anywhere in
+    # traced code — PyInstaller's static analysis has nothing to follow to find it (the same
+    # reason yt_dlp_ejs needs collect_data_files above, just for .py modules instead of data).
+    hiddenimports=['syncedlyrics', 'pypresence', *collect_submodules('yt_dlp_plugins')],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

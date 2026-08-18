@@ -58,6 +58,38 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -OutFile deno.zip
           Expand-Archive deno.zip -DestinationPath musicflow-api/bin -Force
 
+      # Bundled so anonymous downloads (no YouTube login connected) can still get a PO token —
+      # see find_node()/find_pot_server() in main.py. Portable node.exe only (no install), same
+      # bundling shape as ffmpeg/deno above.
+      - name: Fetch Node.js (bundled for the PO token provider)
+        shell: pwsh
+        run: |
+          $latest24 = (Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json") | Where-Object { $_.version -like "v24.*" } | Select-Object -First 1
+          Invoke-WebRequest -Uri "https://nodejs.org/dist/$($latest24.version)/node-$($latest24.version)-win-x64.zip" -OutFile node.zip
+          Expand-Archive node.zip -DestinationPath node-extracted
+          $nodeExe = Get-ChildItem -Path node-extracted -Recurse -Filter "node.exe" | Select-Object -First 1
+          Copy-Item $nodeExe.FullName musicflow-api/bin/node.exe
+
+      # bgutil-ytdlp-pot-provider's server component isn't published as a build artifact, only
+      # source — built here the same way its own README documents (npm ci && npx tsc), pruned
+      # to production dependencies only, then bundled as data (see musicflow-backend.spec).
+      # Tracking master rather than pinning a tag, same "just take latest, verified working at
+      # setup time" approach as ffmpeg/Deno above — and requirements.txt's pip install of the
+      # plugin side is unpinned too, so this keeps both halves in step with each other.
+      - name: Build PO token provider server
+        shell: pwsh
+        run: |
+          git clone --single-branch --branch master https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git bgutil-src
+          Push-Location bgutil-src/server
+          npm ci
+          npx tsc
+          npm prune --omit=dev
+          Pop-Location
+          New-Item -ItemType Directory -Force -Path musicflow-api/bin/bgutil-server | Out-Null
+          Copy-Item -Recurse bgutil-src/server/build musicflow-api/bin/bgutil-server/build
+          Copy-Item -Recurse bgutil-src/server/node_modules musicflow-api/bin/bgutil-server/node_modules
+          Copy-Item bgutil-src/server/package.json musicflow-api/bin/bgutil-server/package.json
+
       - name: Freeze backend with PyInstaller
         working-directory: musicflow-api
         run: py -m PyInstaller musicflow-backend.spec --noconfirm

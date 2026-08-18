@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
 from PIL import Image
-from main import find_ffmpeg, find_deno, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, scan_youtube_browsers, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, find_deno, find_node, find_pot_server, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, scan_youtube_browsers, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
 import scrobbling
@@ -76,7 +76,7 @@ class ProgressHook:
             self.item["progress"] = 100
 
 
-def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, cookies_path: str | None, existing_files: set[str], job: dict, folder: str, files_lock: threading.Lock = None):
+def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, cookies_path: str | None, node_path: str | None, pot_server_path: str | None, existing_files: set[str], job: dict, folder: str, files_lock: threading.Lock = None):
     query = item["query"]
 
     # Step 1: Search
@@ -186,10 +186,30 @@ def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, co
     }
     if ffmpeg_path:
         ydl_opts["ffmpeg_location"] = ffmpeg_path
-    if deno_path:
-        ydl_opts["js_runtimes"] = {"deno": {"path": deno_path}}
+    if deno_path or node_path:
+        ydl_opts["js_runtimes"] = {}
+        if deno_path:
+            ydl_opts["js_runtimes"]["deno"] = {"path": deno_path}
+        if node_path:
+            ydl_opts["js_runtimes"]["node"] = {"path": node_path}
     if cookies_path:
         ydl_opts["cookiefile"] = cookies_path
+    elif node_path and pot_server_path:
+        # Anonymous download (no cookies configured) — ask for a PO token via the bundled
+        # provider and force the "web_safari" client so the token actually gets used. Without
+        # forcing a client, yt-dlp's own default multi-client fallback still picks an
+        # unauthenticated client that ignores the token entirely and 403s anyway — confirmed
+        # by hand: a real, valid token got generated and simply never used for the request
+        # that was actually attempted. This is best-effort, not a guarantee — YouTube
+        # sometimes forces SABR streaming even for a token-backed client and the request
+        # still fails, unrelated to the token — but the job's existing retry cycle already
+        # covers that, and it's a real improvement over never having a token at all. Not
+        # layered on top of cookies: an already-authenticated session doesn't need this, and
+        # forcing a specific client isn't worth risking on a path that already works.
+        ydl_opts["extractor_args"] = {
+            "youtube": {"player_client": ["web_safari"]},
+            "youtubepot-bgutilscript": {"server_home": [pot_server_path]},
+        }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -321,6 +341,8 @@ def process_job(job_id: str):
     ffmpeg_path = find_ffmpeg()
     deno_path = find_deno()
     cookies_path = find_youtube_cookies()
+    node_path = find_node()
+    pot_server_path = find_pot_server()
     log.info("[job %s] Starting download job (%d songs)", job_id, len(job["items"]))
     _prevent_sleep()
     existing_files = {f.lower() for f in os.listdir(folder) if f.lower().endswith(".mp3")}
@@ -345,7 +367,7 @@ def process_job(job_id: str):
             item["error"] = "Cancelled"
             return
         throttle()
-        process_query(item, ffmpeg_path, deno_path, cookies_path, existing_files, job, folder, files_lock)
+        process_query(item, ffmpeg_path, deno_path, cookies_path, node_path, pot_server_path, existing_files, job, folder, files_lock)
         if item["status"] in ("done", "skipped"):
             with files_lock:
                 done_counter["count"] += 1

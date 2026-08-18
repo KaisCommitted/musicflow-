@@ -470,7 +470,9 @@ const BROWSER_LABELS: Record<string, string> = {
 
 /** Status + disconnect only — connecting happens over on the Download page, reactively, only
  * once a job actually shows signs of needing it (a run of 403s). Settings isn't where that
- * flow starts, just where you can see it's on and turn it off. */
+ * flow starts, just where you can see it's on and turn it off — so there's nothing to show
+ * here at all until a connection actually exists. Owns its own heading (rather than a static
+ * one in SettingsPage) so the whole "YouTube" section disappears along with the row. */
 function YoutubeSection() {
   const [status, setStatusState] = useState<{ configured: boolean; browser: string } | null>(null);
 
@@ -482,24 +484,27 @@ function YoutubeSection() {
     refresh();
   };
 
+  if (!status?.configured) return null;
+
   return (
-    <Row
-      title="YouTube connection"
-      description={
-        status?.configured
-          ? `Connected via ${BROWSER_LABELS[status.browser] ?? status.browser}.`
-          : "Not connected. Musicflow will offer to connect if downloads start failing the way they do when YouTube blocks anonymous requests."
-      }
-    >
-      {status?.configured && (
-        <button
-          onClick={() => void disconnect()}
-          className="rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+    <>
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        YouTube
+      </h2>
+      <div className="mt-3 max-w-3xl space-y-3">
+        <Row
+          title="YouTube connection"
+          description={`Connected via ${BROWSER_LABELS[status.browser] ?? status.browser}.`}
         >
-          Disconnect
-        </button>
-      )}
-    </Row>
+          <button
+            onClick={() => void disconnect()}
+            className="rounded-full border border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+          >
+            Disconnect
+          </button>
+        </Row>
+      </div>
+    </>
   );
 }
 
@@ -611,12 +616,7 @@ function SettingsPage() {
         <DiscordSection settings={settings} set={set} />
       </div>
 
-      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        YouTube
-      </h2>
-      <div className="mt-3 max-w-3xl space-y-3">
-        <YoutubeSection />
-      </div>
+      <YoutubeSection />
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Scrobbling

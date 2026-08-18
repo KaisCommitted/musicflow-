@@ -442,8 +442,10 @@ export const submitLastfmScrobble = (payload: ScrobblePayload) =>
 /* A one-time export from a real browser to a static file — see server.py for why this is a
  * file, not a live browser read on every download. */
 
-export const getYoutubeCookieBrowsers = () =>
-  req<{ browsers: string[] }>("/api/youtube-cookies/browsers");
+/** Checks every installed browser for a real YouTube login and returns only the ones that
+ * have one — takes a moment (each browser is a real, if quick, check), not instant. */
+export const scanYoutubeCookieBrowsers = () =>
+  req<{ browsers: string[] }>("/api/youtube-cookies/scan", { method: "POST" });
 
 export const getYoutubeCookieStatus = () =>
   req<{ configured: boolean; browser: string }>("/api/youtube-cookies/status");

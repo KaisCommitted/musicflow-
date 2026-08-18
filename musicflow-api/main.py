@@ -17,9 +17,10 @@ log = logging.getLogger("musicflow")
 
 # Browsers yt-dlp knows how to read cookies from — kept here (not just inline in server.py)
 # so the frontend's dropdown and the backend's validation always agree on what's offered.
-SUPPORTED_COOKIE_BROWSERS = [
-    "chrome", "firefox", "edge", "brave", "opera", "vivaldi", "safari", "chromium", "whale",
-]
+# yt-dlp also supports safari and whale, but Safari hasn't shipped on Windows in over a
+# decade (Musicflow is Windows-only) and Whale (Naver, Korea-only) is niche enough that a
+# clean icon for it doesn't exist anywhere reasonable to source — not worth listing either.
+SUPPORTED_COOKIE_BROWSERS = ["chrome", "firefox", "edge", "brave", "opera", "vivaldi", "chromium"]
 
 # Auth cookies actually present on a real logged-in session — used to confirm the export
 # found a genuine login rather than silently "succeeding" with an empty/logged-out result.
@@ -48,14 +49,12 @@ def _cookie_line_domain(line: str) -> str | None:
     return parts[0].lstrip(".") if len(parts) == 7 else None
 
 
-def setup_youtube_cookies(browser: str) -> dict:
-    """Exports cookies from the given browser via yt-dlp's own extraction, keeps only the
-    domains YouTube login actually needs, and discards everything else before it's written
-    to a file that lives on disk indefinitely. Returns {"ok": True} or {"error": "..."}."""
-    if browser not in SUPPORTED_COOKIE_BROWSERS:
-        return {"error": f"Unsupported browser: {browser}"}
-
-    raw_path = _youtube_cookies_path() + ".raw"
+def _export_youtube_domains(browser: str) -> list[str]:
+    """Exports cookies from the given browser via yt-dlp's own extraction and keeps only the
+    domains YouTube login actually needs — everything else is discarded before it's ever
+    written anywhere persistent. Raises on failure (bad browser, locked profile, ...) rather
+    than returning an error dict, since both callers below want different things on failure."""
+    raw_path = _youtube_cookies_path() + f".{browser}.raw"
     try:
         with yt_dlp.YoutubeDL({
             "cookiesfrombrowser": (browser, None, None, None),
@@ -65,13 +64,8 @@ def setup_youtube_cookies(browser: str) -> dict:
             "skip_download": True,
         }):
             pass
-    except Exception as e:
-        return {"error": f"Couldn't read cookies from {browser}: {e}"}
-
-    if not os.path.isfile(raw_path):
-        return {"error": f"No cookies found in {browser}"}
-
-    try:
+        if not os.path.isfile(raw_path):
+            return []
         with open(raw_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
     finally:
@@ -80,18 +74,50 @@ def setup_youtube_cookies(browser: str) -> dict:
         except OSError:
             pass
 
-    kept = [
+    return [
         line for line in lines
         if line.startswith("#") or (
             (domain := _cookie_line_domain(line)) is not None
             and domain.endswith(_COOKIE_KEEP_DOMAINS)
         )
     ]
-    found_auth = any(
+
+
+def _has_youtube_auth(lines: list[str]) -> bool:
+    return any(
         not line.startswith("#") and line.split("\t")[5] in _YOUTUBE_AUTH_COOKIE_NAMES
-        for line in kept
+        for line in lines
     )
-    if not found_auth:
+
+
+def scan_youtube_browsers() -> list[str]:
+    """Checks every supported browser for a real YouTube login (without persisting anything)
+    so the frontend can offer only the ones that'll actually work, instead of a static list
+    the user has to already know the answer for. A browser that's locked, not installed, or
+    just has no YouTube login is skipped silently — this is a convenience scan, not a place
+    to surface per-browser errors."""
+    found = []
+    for browser in SUPPORTED_COOKIE_BROWSERS:
+        try:
+            if _has_youtube_auth(_export_youtube_domains(browser)):
+                found.append(browser)
+        except Exception as e:
+            log.info("[youtube-cookies] scan skipped %s: %s", browser, e)
+    return found
+
+
+def setup_youtube_cookies(browser: str) -> dict:
+    """Same export as the scan, but for one specific (user-picked) browser, and this one
+    actually persists the result. Returns {"ok": True} or {"error": "..."}."""
+    if browser not in SUPPORTED_COOKIE_BROWSERS:
+        return {"error": f"Unsupported browser: {browser}"}
+
+    try:
+        kept = _export_youtube_domains(browser)
+    except Exception as e:
+        return {"error": f"Couldn't read cookies from {browser}: {e}"}
+
+    if not _has_youtube_auth(kept):
         return {"error": f"No YouTube login found in {browser} — sign in there first, then try again."}
 
     with open(_youtube_cookies_path(), "w", encoding="utf-8") as f:

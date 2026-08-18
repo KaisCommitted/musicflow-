@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -22,10 +23,10 @@ import {
   ARTWORK_SIZES,
   getHistory,
   getHistoryDetail,
-  getYoutubeCookieBrowsers,
   getYoutubeCookieStatus,
   jobArtworkUrl,
   retryHistoryItem,
+  scanYoutubeCookieBrowsers,
   setupYoutubeCookies,
   withArtworkSize,
   type HistoryDetail,
@@ -36,6 +37,7 @@ import { usePlayer } from "@/store/player";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export const Route = createFileRoute("/download")({
   component: DownloadPage,
@@ -61,8 +63,55 @@ function StatusIcon({ status }: { status: string }) {
 
 const BROWSER_LABELS: Record<string, string> = {
   chrome: "Chrome", firefox: "Firefox", edge: "Edge", brave: "Brave", opera: "Opera",
-  vivaldi: "Vivaldi", safari: "Safari", chromium: "Chromium", whale: "Whale",
+  vivaldi: "Vivaldi", chromium: "Chromium",
 };
+
+/** Native <select> can't render an icon inside its own options — this is the whole reason
+ * BrowserPicker exists instead of a plain dropdown. Icons from alrra/browser-logos (MIT),
+ * copied into public/browser-icons/ once rather than pulled from a CDN at runtime, matching
+ * every other asset here being fully offline-capable once installed. */
+function BrowserPicker({
+  browsers,
+  value,
+  onChange,
+}: {
+  browsers: string[];
+  value: string;
+  onChange: (browser: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors hover:border-primary/60 focus:border-primary">
+          {value && (
+            <img src={`/browser-icons/${value}.svg`} alt="" className="h-4 w-4" />
+          )}
+          {BROWSER_LABELS[value] ?? value}
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-40">
+        {browsers.map((b) => (
+          <button
+            key={b}
+            onClick={() => {
+              onChange(b);
+              setOpen(false);
+            }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent",
+              b === value && "text-primary",
+            )}
+          >
+            <img src={`/browser-icons/${b}.svg`} alt="" className="h-4 w-4" />
+            {BROWSER_LABELS[b] ?? b}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /** YouTube increasingly blocks anonymous downloads outright ("Sign in to confirm you're not
  * a bot") — this connects a real login once, exported to a static file, so downloads work
@@ -76,16 +125,19 @@ function YoutubeLoginCard({
   reason: "not-connected" | "likely-blocked";
   onReconnected: () => void;
 }) {
+  const [scanning, setScanning] = useState(true);
   const [browsers, setBrowsers] = useState<string[]>([]);
   const [browser, setBrowser] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getYoutubeCookieBrowsers().then((r) => {
-      setBrowsers(r.browsers);
-      setBrowser(r.browsers[0] ?? "");
-    });
+    void scanYoutubeCookieBrowsers()
+      .then((r) => {
+        setBrowsers(r.browsers);
+        setBrowser(r.browsers[0] ?? "");
+      })
+      .finally(() => setScanning(false));
   }, []);
 
   const connect = async () => {
@@ -112,27 +164,25 @@ function YoutubeLoginCard({
           {reason === "likely-blocked" ? "Your YouTube connection may have expired" : "Connect YouTube"}
         </p>
         <p className="text-xs text-muted-foreground">
-          {reason === "likely-blocked"
-            ? "Downloads are failing the way they do when YouTube is blocking anonymous requests — reconnecting usually fixes it."
-            : "YouTube increasingly blocks downloads that aren't signed in. Connect once — pick the browser you're logged into YouTube with."}
+          {scanning
+            ? "Checking your browsers for a YouTube login…"
+            : browsers.length === 0
+              ? "No YouTube login found in any installed browser — sign in to YouTube in one of them, then try again."
+              : reason === "likely-blocked"
+                ? "Downloads are failing the way they do when YouTube is blocking anonymous requests — reconnecting usually fixes it."
+                : "YouTube increasingly blocks downloads that aren't signed in. We checked your browsers — pick which login to use."}
         </p>
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </div>
       <div className="flex items-center gap-2">
-        <select
-          value={browser}
-          onChange={(e) => setBrowser(e.target.value)}
-          className="h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors focus:border-primary"
-        >
-          {browsers.map((b) => (
-            <option key={b} value={b}>
-              {BROWSER_LABELS[b] ?? b}
-            </option>
-          ))}
-        </select>
+        {scanning ? (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : browsers.length > 0 ? (
+          <BrowserPicker browsers={browsers} value={browser} onChange={setBrowser} />
+        ) : null}
         <button
           onClick={() => void connect()}
-          disabled={connecting || !browser}
+          disabled={connecting || !browser || scanning}
           className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40"
         >
           {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}

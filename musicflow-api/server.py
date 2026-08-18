@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
 from PIL import Image
-from main import find_ffmpeg, find_deno, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, SUPPORTED_COOKIE_BROWSERS, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, find_deno, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, scan_youtube_browsers, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
 import scrobbling
@@ -2048,9 +2048,14 @@ def listenbrainz_disconnect():
 # occasional reconnecting — the frontend surfaces that via the "likely blocked" job signal
 # rather than a timer, so it only asks when it's actually probably needed.
 
-@app.route("/api/youtube-cookies/browsers")
-def youtube_cookies_browsers():
-    return jsonify({"browsers": SUPPORTED_COOKIE_BROWSERS})
+@app.route("/api/youtube-cookies/scan", methods=["POST"])
+def youtube_cookies_scan():
+    """Checks every supported browser for a real YouTube login and returns only the ones that
+    have one — lets the frontend offer a pick-from-what-actually-works list instead of a
+    static one the user has to already know the answer for. Deliberately never auto-picks
+    one itself: if more than one browser has a valid login (e.g. a deliberate secondary
+    account in one of them), which account gets used should stay an explicit choice."""
+    return jsonify({"browsers": scan_youtube_browsers()})
 
 
 @app.route("/api/youtube-cookies/status")

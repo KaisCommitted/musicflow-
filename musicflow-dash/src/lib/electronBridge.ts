@@ -7,6 +7,24 @@ export interface GlobalKeybind {
   combo: string;
 }
 
+/** Shape of a single Electron `session.cookies` entry, trimmed to just what the backend needs
+ * to write a Netscape-format cookie file (see setup_youtube_cookies_from_electron in main.py) —
+ * not the full Electron Cookie type. */
+export interface YoutubeLoginCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  secure: boolean;
+  hostOnly: boolean;
+  expirationDate?: number;
+}
+
+export interface YoutubeLoginResult {
+  ok: boolean;
+  cookies?: YoutubeLoginCookie[];
+}
+
 declare global {
   interface Window {
     musicflow?: {
@@ -17,6 +35,7 @@ declare global {
       closeWindow: () => void;
       isWindowMaximized: () => Promise<boolean>;
       onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void;
+      openYoutubeLogin: () => Promise<YoutubeLoginResult>;
     };
   }
 }
@@ -41,3 +60,10 @@ export const isWindowMaximized = () => window.musicflow?.isWindowMaximized() ?? 
 export const onWindowMaximizedChange = (callback: (maximized: boolean) => void): (() => void) => {
   return window.musicflow?.onWindowMaximizedChange(callback) ?? (() => {});
 };
+
+/** Opens Musicflow's own in-app YouTube sign-in window and resolves once a real login is
+ * detected (see main.js). No system-browser fallback outside Electron — DownloadPage only
+ * renders the connect card when isElectron() is true, so this no-op resolution is never
+ * actually reachable from the UI, just a safe default for the type. */
+export const openYoutubeLogin = (): Promise<YoutubeLoginResult> =>
+  window.musicflow?.openYoutubeLogin() ?? Promise.resolve({ ok: false });

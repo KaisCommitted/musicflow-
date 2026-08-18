@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, Response
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 from mutagen.mp3 import MP3
 from PIL import Image
-from main import find_ffmpeg, find_deno, find_youtube_cookies, setup_youtube_cookies, clear_youtube_cookies, scan_youtube_browsers, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
+from main import find_ffmpeg, find_deno, find_youtube_cookies, setup_youtube_cookies_from_electron, clear_youtube_cookies, get_first_video_link, parse_artist_title, fetch_lyrics, fetch_lyrics_from_source, LYRICS_SOURCE_ORDER, fetch_music_metadata, apply_metadata, generate_playlist, parse_playlist_input, rename_lyrics_backups
 import db
 import discord_rpc
 import scrobbling
@@ -2041,54 +2041,37 @@ def listenbrainz_disconnect():
 
 # ── YouTube login (cookies) ──
 # YouTube increasingly blocks anonymous/automated-looking traffic outright ("Sign in to
-# confirm you're not a bot") — a logged-in session avoids that. Cookies are exported once
-# from a real browser to a static file (see setup_youtube_cookies in main.py) rather than
-# read live from the browser on every download, so downloads never require that browser to
-# be closed. The tradeoff: YouTube rotates session cookies every few days, so this needs
-# occasional reconnecting — the frontend surfaces that via the "likely blocked" job signal
-# rather than a timer, so it only asks when it's actually probably needed.
-
-@app.route("/api/youtube-cookies/scan", methods=["POST"])
-def youtube_cookies_scan():
-    """Checks every supported browser for a real YouTube login and returns the ones that have
-    one — lets the frontend offer a pick-from-what-actually-works list instead of a static one
-    the user has to already know the answer for. Deliberately never auto-picks one itself: if
-    more than one browser has a valid login (e.g. a deliberate secondary account in one of
-    them), which account gets used should stay an explicit choice.
-
-    Also reports "locked" (browser currently open — closing it and retrying may just work) and
-    "blocked" (App-Bound Encryption, no fix) browsers separately — see scan_youtube_browsers.
-    The frontend needs to tell these apart from a plain miss, since "no login found" would be
-    wrong for either: we don't actually know, we just couldn't check."""
-    return jsonify(scan_youtube_browsers())
-
+# confirm you're not a bot") — a logged-in session avoids that. The sign-in itself happens in
+# Musicflow's own in-app window (musicflow-electron's "youtube-login:open" handler), not by
+# reading any of the user's actual installed browsers — Chromium's "App-Bound Encryption"
+# (Chrome 127+, since adopted by Edge, Brave, and the rest) blocks every outside tool from
+# reading those, with no known workaround (yt-dlp issue #10927). The resulting cookies are
+# exported once to a static file (see setup_youtube_cookies_from_electron in main.py) rather
+# than read live on every download, so downloads never require that sign-in window to be open.
+# The tradeoff: YouTube rotates session cookies every few days, so this needs occasional
+# reconnecting — the frontend surfaces that via the "likely blocked" job signal rather than a
+# timer, so it only asks when it's actually probably needed.
 
 @app.route("/api/youtube-cookies/status")
 def youtube_cookies_status():
-    configured = find_youtube_cookies() is not None
-    return jsonify({
-        "configured": configured,
-        "browser": db.get_setting("youtubeCookiesBrowser", "") if configured else "",
-    })
+    return jsonify({"configured": find_youtube_cookies() is not None})
 
 
 @app.route("/api/youtube-cookies/setup", methods=["POST"])
 def youtube_cookies_setup():
     data = request.get_json() or {}
-    browser = str(data.get("browser", "")).strip().lower()
-    if not browser:
-        return jsonify({"error": "Missing browser"}), 400
-    result = setup_youtube_cookies(browser, close_first=bool(data.get("closeFirst")))
+    cookies = data.get("cookies")
+    if not isinstance(cookies, list) or not cookies:
+        return jsonify({"error": "Missing cookies"}), 400
+    result = setup_youtube_cookies_from_electron(cookies)
     if "error" in result:
         return jsonify(result), 400
-    db.set_setting("youtubeCookiesBrowser", browser)
     return jsonify({"ok": True})
 
 
 @app.route("/api/youtube-cookies/disconnect", methods=["POST"])
 def youtube_cookies_disconnect():
     clear_youtube_cookies()
-    db.set_setting("youtubeCookiesBrowser", "")
     return jsonify({"ok": True})
 
 

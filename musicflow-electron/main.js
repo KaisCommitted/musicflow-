@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, dialog, shell, globalShortcut, ipcMain } = require("electron");
+const { app, BrowserWindow, Tray, Menu, dialog, shell, globalShortcut, ipcMain, session } = require("electron");
 const path = require("path");
 const net = require("net");
 const http = require("http");
@@ -184,6 +184,86 @@ function applyGlobalKeybinds(bindings) {
 }
 
 ipcMain.on("keybinds:set", (_event, bindings) => applyGlobalKeybinds(bindings));
+
+// A dedicated, isolated session used for nothing else — signing in here and reading the
+// resulting cookies is a plain first-party API call (this app reading a session it owns), not
+// an outside tool decrypting another program's storage the way reading a real installed
+// browser's cookie file is. That's what actually makes this work everywhere: Chromium's
+// "App-Bound Encryption" (see musicflow-api/main.py) blocks the latter on every real browser
+// (Chrome, Edge, Brave, ...) with no known workaround, but doesn't apply here at all.
+const YOUTUBE_LOGIN_PARTITION = "persist:youtube-login";
+// Google refuses to even show its sign-in page ("This browser or app may not be secure") to
+// user agents it flags as an embedded webview — Electron's default UA includes an
+// "Electron/x.x.x" token that trips this. Overriding it to a plain desktop Chrome UA is the
+// standard fix other Electron apps use for exactly this.
+const DESKTOP_CHROME_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const YOUTUBE_AUTH_COOKIE_NAMES = new Set(["SAPISID", "SID", "__Secure-3PSID", "LOGIN_INFO"]);
+
+async function currentYoutubeLoginCookies(loginSession) {
+  const [youtube, google] = await Promise.all([
+    loginSession.cookies.get({ domain: ".youtube.com" }),
+    loginSession.cookies.get({ domain: ".google.com" }),
+  ]);
+  return [...youtube, ...google];
+}
+
+ipcMain.handle("youtube-login:open", () => {
+  const loginSession = session.fromPartition(YOUTUBE_LOGIN_PARTITION);
+  loginSession.setUserAgent(DESKTOP_CHROME_UA);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let settleTimer = null;
+
+    const win = new BrowserWindow({
+      width: 520,
+      height: 700,
+      parent: mainWindow,
+      modal: true,
+      icon: iconPath(),
+      autoHideMenuBar: true,
+      title: "Sign in to YouTube",
+      webPreferences: {
+        session: loginSession,
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+      },
+    });
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(settleTimer);
+      loginSession.cookies.removeListener("changed", onCookieChange);
+      win.removeListener("closed", onClosed);
+      resolve(result);
+      if (!win.isDestroyed()) win.close();
+    };
+
+    const onCookieChange = (_event, cookie, _cause, removed) => {
+      if (settled || removed || !YOUTUBE_AUTH_COOKIE_NAMES.has(cookie.name)) return;
+      // A real login lands several cookies across a couple of redirects, not all in the same
+      // tick — debounce briefly after the first sign of one so the export isn't missing the
+      // rest of them.
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(async () => {
+        const cookies = await currentYoutubeLoginCookies(loginSession);
+        finish({ ok: true, cookies });
+      }, 1500);
+    };
+    const onClosed = () => finish({ ok: false });
+
+    loginSession.cookies.on("changed", onCookieChange);
+    win.on("closed", onClosed);
+
+    win.loadURL("https://www.youtube.com/").catch((err) => {
+      log("[youtube-login] failed to load:", err.message);
+      finish({ ok: false });
+    });
+  });
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({

@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -27,18 +26,17 @@ import {
   getYoutubeCookieStatus,
   jobArtworkUrl,
   retryHistoryItem,
-  scanYoutubeCookieBrowsers,
   setupYoutubeCookies,
   withArtworkSize,
   type HistoryDetail,
   type HistoryJobSummary,
 } from "@/lib/api";
+import { isElectron, openYoutubeLogin } from "@/lib/electronBridge";
 import { useDownload } from "@/store/download";
 import { usePlayer } from "@/store/player";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export const Route = createFileRoute("/download")({
   component: DownloadPage,
@@ -62,75 +60,24 @@ function StatusIcon({ status }: { status: string }) {
   return <span className="h-2 w-2 rounded-full bg-muted-foreground" />;
 }
 
-const BROWSER_LABELS: Record<string, string> = {
-  chrome: "Chrome", firefox: "Firefox", edge: "Edge", brave: "Brave", opera: "Opera",
-  vivaldi: "Vivaldi", chromium: "Chromium",
-};
-
-function joinBrowserNames(browsers: string[]): string {
-  const labels = browsers.map((b) => BROWSER_LABELS[b] ?? b);
-  if (labels.length <= 2) return labels.join(" and ");
-  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
-}
-
-// Dismissing the "connect YouTube" card doesn't get persisted to the backend on purpose: for
-// Chrome/Edge/Brave/Opera/Vivaldi users this card can never be satisfied (see main.py's
-// App-Bound Encryption note), so it shouldn't nag every visit — but it should still come back
-// next launch, in case they've installed Firefox by then.
+// Dismissing the "connect YouTube" card doesn't get persisted to the backend on purpose — it
+// should still come back next launch as a gentle reminder, just not nag every visit within the
+// same session once someone's said "not now".
 const YOUTUBE_CARD_DISMISS_KEY = "musicflow:youtube-login-dismissed";
-
-/** Native <select> can't render an icon inside its own options — this is the whole reason
- * BrowserPicker exists instead of a plain dropdown. Icons from alrra/browser-logos (MIT),
- * copied into public/browser-icons/ once rather than pulled from a CDN at runtime, matching
- * every other asset here being fully offline-capable once installed. */
-function BrowserPicker({
-  browsers,
-  value,
-  onChange,
-}: {
-  browsers: string[];
-  value: string;
-  onChange: (browser: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors hover:border-primary/60 focus:border-primary">
-          {value && (
-            <img src={`/browser-icons/${value}.svg`} alt="" className="h-4 w-4" />
-          )}
-          {BROWSER_LABELS[value] ?? value}
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-40">
-        {browsers.map((b) => (
-          <button
-            key={b}
-            onClick={() => {
-              onChange(b);
-              setOpen(false);
-            }}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent",
-              b === value && "text-primary",
-            )}
-          >
-            <img src={`/browser-icons/${b}.svg`} alt="" className="h-4 w-4" />
-            {BROWSER_LABELS[b] ?? b}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 /** YouTube increasingly blocks anonymous downloads outright ("Sign in to confirm you're not
  * a bot") — this connects a real login once, exported to a static file, so downloads work
- * without needing that browser open. Shown when not connected yet, or when a running job
- * signals it's likely hitting that exact block (`onReconnected` re-checks status so the
- * caller can hide this again once it's fixed). */
+ * without needing anything else open afterward. Shown when not connected yet, or when a
+ * running job signals it's likely hitting that exact block (`onReconnected` re-checks status
+ * so the caller can hide this again once it's fixed).
+ *
+ * Sign-in happens in Musicflow's own in-app window (openYoutubeLogin — Electron-only, see
+ * electronBridge.ts), not by reading any of the user's installed browsers: Chromium's
+ * "App-Bound Encryption" blocks every outside tool from doing that on Chrome/Edge/Brave/etc,
+ * with no known workaround. This sidesteps the problem instead of working around it, and works
+ * identically for every user regardless of what browser they have — or whether they have one
+ * at all — which is also why this card doesn't render outside Electron: there's no meaningful
+ * fallback for `npm run dev` in a plain browser tab. */
 function YoutubeLoginCard({
   reason,
   onReconnected,
@@ -138,34 +85,19 @@ function YoutubeLoginCard({
   reason: "not-connected" | "likely-blocked";
   onReconnected: () => void;
 }) {
-  const [scanning, setScanning] = useState(true);
-  const [browsers, setBrowsers] = useState<string[]>([]);
-  const [locked, setLocked] = useState<string[]>([]);
-  const [blocked, setBlocked] = useState<string[]>([]);
-  const [browser, setBrowser] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem(YOUTUBE_CARD_DISMISS_KEY) === "1",
   );
 
-  useEffect(() => {
-    void scanYoutubeCookieBrowsers()
-      .then((r) => {
-        setBrowsers(r.browsers);
-        setLocked(r.locked);
-        setBlocked(r.blocked);
-        setBrowser(r.browsers[0] ?? "");
-      })
-      .finally(() => setScanning(false));
-  }, []);
-
-  const connectTo = async (b: string, closeFirst: boolean) => {
-    if (!b) return;
+  const connect = async () => {
     setError(null);
     setConnecting(true);
     try {
-      await setupYoutubeCookies(b, closeFirst);
+      const result = await openYoutubeLogin();
+      if (!result.ok || !result.cookies) return; // window closed before signing in — not an error
+      await setupYoutubeCookies(result.cookies);
       onReconnected();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't connect.");
@@ -173,17 +105,8 @@ function YoutubeLoginCard({
       setConnecting(false);
     }
   };
-  const connect = () => connectTo(browser, false);
 
-  if (dismissed) return null;
-
-  // Nothing usable, but we didn't just "not find" these — something stopped us from even
-  // checking, which needs its own explanation. Neither can offer a picker: there's nothing to
-  // pick, only something to explain. Locked wins when both are present since it's the
-  // actionable one (closing the browser costs nothing and might just fix it).
-  const noneUsable = !scanning && browsers.length === 0;
-  const explainLocked = noneUsable && locked.length > 0;
-  const explainBlocked = noneUsable && !explainLocked && blocked.length > 0;
+  if (!isElectron() || dismissed) return null;
 
   return (
     <div className="surface flex flex-wrap items-center gap-4 px-5 py-4">
@@ -195,56 +118,21 @@ function YoutubeLoginCard({
           {reason === "likely-blocked" ? "Your YouTube connection may have expired" : "Connect YouTube"}
         </p>
         <p className="text-xs text-muted-foreground">
-          {scanning
-            ? "Checking your browsers for a YouTube login…"
-            : explainLocked
-              ? `${joinBrowserNames(locked)} ${locked.length > 1 ? "are" : "is"} open right now, which stops us from even checking ${locked.length > 1 ? "them" : "it"} for a YouTube login — closing ${locked.length > 1 ? "them" : "it"} usually fixes this.`
-              : explainBlocked
-                ? `${joinBrowserNames(blocked)} ${blocked.length > 1 ? "block" : "blocks"} outside apps from reading its saved cookies — a security feature every Chromium-based browser has had since mid-2024, not something we can fix. Firefox doesn't have this restriction, or skip this — downloads still work without it, just less reliably.`
-                : browsers.length === 0
-                  ? "No YouTube login found in any installed browser — sign in to YouTube in one of them, then try again."
-                  : reason === "likely-blocked"
-                    ? "Downloads are failing the way they do when YouTube is blocking anonymous requests — reconnecting usually fixes it."
-                    : "YouTube increasingly blocks downloads that aren't signed in. We checked your browsers — pick which login to use."}
+          {reason === "likely-blocked"
+            ? "Downloads are failing the way they do when YouTube is blocking anonymous requests — reconnecting usually fixes it."
+            : "YouTube increasingly blocks downloads that aren't signed in. Sign in once, right here — any Google account works."}
         </p>
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {scanning ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : browsers.length > 0 ? (
-          <BrowserPicker browsers={browsers} value={browser} onChange={setBrowser} />
-        ) : null}
-        {(scanning || browsers.length > 0) && (
-          <button
-            onClick={() => void connect()}
-            disabled={connecting || !browser || scanning}
-            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40"
-          >
-            {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {connecting ? "Connecting…" : "Connect"}
-          </button>
-        )}
-        {/* Only for a browser we know is just *open* (locked), never for one that's DPAPI-
-         * blocked — closing it wouldn't change anything there. A distinct, explicitly-labeled
-         * button rather than folding this into "Connect" everywhere, since closing someone's
-         * browser is disruptive enough that clicking it should be its own clear choice. */}
-        {explainLocked &&
-          locked.map((b) => (
-            <button
-              key={b}
-              onClick={() => void connectTo(b, true)}
-              disabled={connecting}
-              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40"
-            >
-              {connecting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <img src={`/browser-icons/${b}.svg`} alt="" className="h-3.5 w-3.5" />
-              )}
-              {connecting ? "Connecting…" : `Close ${BROWSER_LABELS[b] ?? b} & Connect`}
-            </button>
-          ))}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => void connect()}
+          disabled={connecting}
+          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105 disabled:opacity-40"
+        >
+          {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogIn className="h-3.5 w-3.5" />}
+          {connecting ? "Signing in…" : "Sign in"}
+        </button>
         <button
           onClick={() => {
             sessionStorage.setItem(YOUTUBE_CARD_DISMISS_KEY, "1");

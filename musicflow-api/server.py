@@ -160,7 +160,13 @@ def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, co
         return
 
     ydl_opts = {
-        "format": "bestaudio/best",
+        # bestaudio first, always — the "worst" only ever applies as a fallback for a video
+        # whose client gave us no audio-only stream at all (e.g. SABR-forced web_safari), which
+        # means every remaining option is a combined video+audio format. The video half gets
+        # thrown away by FFmpegExtractAudio right below regardless, so there's no reason to eat
+        # the "best" (i.e. highest-resolution, biggest) one — smallest keeps the same audio
+        # extraction result for a fraction of the download.
+        "format": "bestaudio/worst",
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",

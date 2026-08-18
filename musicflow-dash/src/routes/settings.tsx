@@ -605,13 +605,6 @@ function SettingsPage() {
       </div>
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Backup
-      </h2>
-      <div className="mt-3 max-w-3xl space-y-3">
-        <BackupSection />
-      </div>
-
-      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Discord
       </h2>
       <div className="mt-3 max-w-3xl space-y-3">
@@ -686,6 +679,13 @@ function SettingsPage() {
             ))}
           </div>
         ))}
+      </div>
+
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Backup
+      </h2>
+      <div className="mt-3 max-w-3xl space-y-3">
+        <BackupSection />
       </div>
     </div>
   );

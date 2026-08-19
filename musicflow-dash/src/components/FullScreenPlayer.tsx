@@ -64,11 +64,27 @@ export function FullScreenPlayer() {
   const active = activeLyricIndex(lines, currentTime);
   const listRef = useRef<HTMLDivElement>(null);
   const realSources = sources.filter((s) => s.method !== "demo");
-  // "normal" is the existing scrolling list; "big" shows only the current line (plus
-  // neighbours) at a much larger size. Sticky for the session, not persisted.
-  const [lyricsMode, setLyricsMode] = useState<"normal" | "big">("normal");
+  // "normal" is the existing scrolling list; "big" shows the current line (plus neighbours,
+  // all still in the list) at a larger size; "huge" shows only three lines total — the
+  // previous and next lines greyed out, nothing else. Cycles normal -> big -> huge -> normal.
+  // Sticky for the session, not persisted.
+  const [lyricsMode, setLyricsMode] = useState<"normal" | "big" | "huge">("normal");
   const isBigMode = synced && lyricsMode === "big";
-  const { docFullscreen, showChrome } = useFullscreenChrome();
+  const isHugeMode = synced && lyricsMode === "huge";
+  const cycleLyricsMode = () =>
+    setLyricsMode((m) => (m === "normal" ? "big" : m === "big" ? "huge" : "normal"));
+  // Mouse-idle tracking runs whenever the immersive view itself is open at all (windowed or
+  // real fullscreen) — see useFullscreenChrome for how the header vs. the lyrics
+  // controls/style switcher each turn that into a different visibility rule below.
+  const { docFullscreen, mouseIdle } = useFullscreenChrome(fullscreen);
+  const mouseActive = !mouseIdle;
+  // The header (minimize / enter-exit-fullscreen): idle-reveals in the normal windowed
+  // immersive view, but never shows at all in real fullscreen — only actually exiting real
+  // fullscreen (Escape) brings it back.
+  const showHeader = !docFullscreen && mouseActive;
+  // Lyrics controls (+5s/-5s, source switcher, Aa) and the style switcher: idle-reveal the
+  // same way in both the windowed view and real fullscreen.
+  const showChrome = mouseActive;
   // Which full-screen background visualizer is active. Sticky for the session, not persisted —
   // same convention as lyricsMode above.
   const [styleId, setStyleId] = useState(DEFAULT_VISUALIZER_ID);
@@ -86,6 +102,12 @@ export function FullScreenPlayer() {
   useEffect(() => () => {
     if (switcherPinTimeout.current) clearTimeout(switcherPinTimeout.current);
   }, []);
+  // The switcher idle-fades with the rest of the lyrics/style chrome in real fullscreen (see
+  // showChrome below) — drop any pin along with it, so a still-pinned chip row from a moment
+  // ago can't stay silently clickable underneath the now-invisible wrapper.
+  useEffect(() => {
+    if (!showChrome) setSwitcherPinned(false);
+  }, [showChrome]);
 
   useEffect(() => {
     setLyricsSynced(synced);
@@ -151,6 +173,12 @@ export function FullScreenPlayer() {
             docFullscreen ? "top-0" : "top-9",
           )}
         >
+          {/* Fully opaque backstop — the blurred bed's blur can leave faint edge fringing, and
+              the veil below is a partial-alpha gradient by design (it's meant to let colour
+              breathe through near the centre), so neither one alone guarantees full coverage.
+              Without this, the mini player and whatever else sits behind in the DOM was
+              faintly visible through the edges/corners. */}
+          <div className="absolute inset-0 bg-background" />
           <div className="absolute inset-0 scale-110 blur-3xl brightness-[var(--stage-bed-brightness)] saturate-150">
             {song.artwork ? (
               <img src={song.artwork} alt="" className="h-full w-full object-cover" />
@@ -165,15 +193,14 @@ export function FullScreenPlayer() {
           <div className="pointer-events-none absolute inset-0 bg-[image:var(--stage-veil)]" />
 
           <div className="relative flex h-full flex-col">
-            {/* Outside real (OS-level) fullscreen this just always shows. Inside it, an
-                immersive view shouldn't permanently show its own chrome on top — but hiding it
-                outright would stand between the mouse and any way back out, so it idle-fades
-                instead (useFullscreenChrome): visible while the mouse moves, gone 1s after it
-                stops, same as the title bar above it. */}
+            {/* Idle-reveals on mouse movement in the normal windowed view; in real fullscreen
+                it never reappears that way at all, only on actually exiting it (Escape) —
+                see showHeader above. Stays mounted (not conditionally rendered) purely so the
+                opacity change fades instead of popping. */}
             <div
               className={cn(
                 "flex items-center justify-between px-6 py-5 transition-opacity duration-300",
-                showChrome ? "opacity-100" : "pointer-events-none opacity-0",
+                showHeader ? "opacity-100" : "pointer-events-none opacity-0",
               )}
             >
               <motion.button
@@ -342,7 +369,12 @@ export function FullScreenPlayer() {
 
               <div className="flex min-h-0 flex-col">
                 {lines.length > 0 && (
-                  <div className="mb-2 flex items-center justify-between gap-3 px-6">
+                  <div
+                    className={cn(
+                      "mb-2 flex items-center justify-between gap-3 px-6 transition-opacity duration-300",
+                      showChrome ? "opacity-100" : "pointer-events-none opacity-0",
+                    )}
+                  >
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
@@ -393,12 +425,12 @@ export function FullScreenPlayer() {
                       )}
                       {synced && (
                         <button
-                          onClick={() => setLyricsMode((m) => (m === "big" ? "normal" : "big"))}
-                          aria-label={lyricsMode === "big" ? "Normal lyrics view" : "Big lyrics view"}
-                          title="Toggle big lyrics view"
+                          onClick={cycleLyricsMode}
+                          aria-label={`Lyrics view: ${lyricsMode} (click to cycle)`}
+                          title="Cycle lyrics size — normal, big, huge"
                           className={cn(
                             "grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-card/60 hover:text-foreground",
-                            lyricsMode === "big" && "bg-card/60 text-primary",
+                            lyricsMode !== "normal" && "bg-card/60 text-primary",
                           )}
                         >
                           <ALargeSmall className="h-3.5 w-3.5" />
@@ -451,6 +483,50 @@ export function FullScreenPlayer() {
                         <p key={i}>{line.text}</p>
                       ))}
                     </div>
+                  ) : isHugeMode ? (
+                    // Only ever three lines exist here at all — previous and next greyed out,
+                    // everything else genuinely not rendered (not just faded), unlike "big"
+                    // mode which keeps the whole list mounted underneath. Never needs to
+                    // scroll, so it just centers in the same container rather than getting a
+                    // layout of its own.
+                    <div className="flex h-full flex-col items-center justify-center gap-6 px-10 text-center">
+                      <AnimatePresence mode="wait">
+                        <motion.p
+                          key={`prev-${active}`}
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 0.4, y: 0 }}
+                          exit={{ opacity: 0, y: -12 }}
+                          transition={{ duration: 0.3, ease: "easeOut" }}
+                          className="text-2xl leading-relaxed text-foreground/70"
+                        >
+                          {lines[active - 1]?.text ?? " "}
+                        </motion.p>
+                      </AnimatePresence>
+                      <AnimatePresence mode="wait">
+                        <motion.p
+                          key={`current-${active}`}
+                          initial={{ opacity: 0, scale: 0.92 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.92 }}
+                          transition={{ duration: 0.3, ease: "easeOut" }}
+                          className="text-6xl font-bold leading-tight text-primary"
+                        >
+                          {lines[active]?.text ?? " "}
+                        </motion.p>
+                      </AnimatePresence>
+                      <AnimatePresence mode="wait">
+                        <motion.p
+                          key={`next-${active}`}
+                          initial={{ opacity: 0, y: -12 }}
+                          animate={{ opacity: 0.4, y: 0 }}
+                          exit={{ opacity: 0, y: 12 }}
+                          transition={{ duration: 0.3, ease: "easeOut" }}
+                          className="text-2xl leading-relaxed text-foreground/70"
+                        >
+                          {lines[active + 1]?.text ?? " "}
+                        </motion.p>
+                      </AnimatePresence>
+                    </div>
                   ) : (
                     // Every line stays mounted the whole time — only its opacity/scale animate as
                     // `active` moves. That's what makes this smooth: Framer tweens the existing
@@ -491,51 +567,59 @@ export function FullScreenPlayer() {
               </div>
             </div>
 
-            {/* Hidden until hovered, same as the real-fullscreen chrome rule above — an
-                immersive view shouldn't have a permanent row of chips sitting on it. The
-                trigger is the only hoverable/clickable part until revealed; the wrapper and
-                (initially) the chip row itself pass clicks straight through to whatever's
-                behind them. Clicking the trigger or a style pins it open for 20s (switcherPinned)
-                so it doesn't vanish mid-decision the moment the pointer drifts off — after that
-                it drops back to pure hover. */}
-            {!docFullscreen && (
-              <div className="group/style pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-3">
-                <div
-                  className={cn(
-                    "pointer-events-none flex origin-bottom items-center gap-1 rounded-full bg-card/70 p-1.5 shadow-elevated backdrop-blur transition-all duration-200 group-hover/style:pointer-events-auto group-hover/style:scale-100 group-hover/style:opacity-100",
-                    switcherPinned
-                      ? "pointer-events-auto scale-100 opacity-100"
-                      : "scale-95 opacity-0",
-                  )}
-                >
-                  {VISUALIZERS.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => {
-                        setStyleId(v.id);
-                        pinSwitcher();
-                      }}
-                      title={v.description}
-                      className={cn(
-                        "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
-                        styleId === v.id &&
-                          "bg-primary text-primary-foreground hover:text-primary-foreground",
-                      )}
-                    >
-                      {v.name}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={pinSwitcher}
-                  aria-label="Change visualizer style"
-                  title="Visualizer style"
-                  className="pointer-events-auto grid h-9 w-9 place-items-center rounded-full bg-card/60 text-muted-foreground backdrop-blur transition-colors hover:bg-card hover:text-foreground"
-                >
-                  <Sparkles className="h-4 w-4" />
-                </button>
+            {/* Hidden until hovered — an immersive view shouldn't have a permanent row of
+                chips sitting on it. The trigger is the only hoverable/clickable part until
+                revealed; the wrapper and (initially) the chip row itself pass clicks straight
+                through to whatever's behind them. Clicking the trigger or a style pins it open
+                for 20s (switcherPinned) so it doesn't vanish mid-decision the moment the
+                pointer drifts off — after that it drops back to pure hover. On top of that,
+                same as the lyrics controls (not the title bar/header — those never come back
+                until you actually exit real fullscreen), the whole thing also idle-fades in
+                real fullscreen so it's reachable there too, just not permanently on screen. */}
+            <div
+              className={cn(
+                "group/style pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-3 transition-opacity duration-300",
+                showChrome ? "opacity-100" : "opacity-0",
+              )}
+            >
+              <div
+                className={cn(
+                  "pointer-events-none flex origin-bottom items-center gap-1 rounded-full bg-card/70 p-1.5 shadow-elevated backdrop-blur transition-all duration-200 group-hover/style:pointer-events-auto group-hover/style:scale-100 group-hover/style:opacity-100",
+                  switcherPinned
+                    ? "pointer-events-auto scale-100 opacity-100"
+                    : "scale-95 opacity-0",
+                )}
+              >
+                {VISUALIZERS.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => {
+                      setStyleId(v.id);
+                      pinSwitcher();
+                    }}
+                    title={v.description}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+                      styleId === v.id &&
+                        "bg-primary text-primary-foreground hover:text-primary-foreground",
+                    )}
+                  >
+                    {v.name}
+                  </button>
+                ))}
               </div>
-            )}
+              <button
+                onClick={pinSwitcher}
+                aria-label="Change visualizer style"
+                title="Visualizer style"
+                className={cn(
+                  "grid h-9 w-9 place-items-center rounded-full bg-card/60 text-muted-foreground backdrop-blur transition-colors hover:bg-card hover:text-foreground",
+                  showChrome ? "pointer-events-auto" : "pointer-events-none",
+                )}
+              >
+                <Sparkles className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </motion.div>
       )}

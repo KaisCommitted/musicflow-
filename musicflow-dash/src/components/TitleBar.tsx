@@ -16,12 +16,14 @@ import { cn } from "@/lib/utils";
  * Renders nothing outside Electron (Vite dev / a plain browser tab already has its own).
  *
  * This is the app's own window chrome, entirely separate from the full-screen player's own
- * header — it stays mounted regardless of that view, so it needs its own fullscreen-idle
- * fade (see useFullscreenChrome) or it would sit on top of an immersive real-fullscreen view
- * forever, "exit"/minimize buttons and all. */
+ * header — it stays mounted regardless of that view, so it needs its own real-fullscreen hide
+ * (see useFullscreenChrome) or it would sit on top of an immersive real-fullscreen view
+ * forever, "exit"/minimize buttons and all. Unlike the full-screen player's lyrics controls, this
+ * never reappears on mouse movement while in real fullscreen — only on actually exiting it
+ * (Escape, which the Fullscreen API already handles natively). */
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
-  const { showChrome } = useFullscreenChrome();
+  const { docFullscreen } = useFullscreenChrome();
 
   useEffect(() => {
     if (!isElectron()) return;
@@ -35,7 +37,7 @@ export function TitleBar() {
     <div
       className={cn(
         "drag-region relative z-[100] flex h-9 shrink-0 items-center justify-end bg-sidebar transition-opacity duration-300",
-        showChrome ? "opacity-100" : "pointer-events-none opacity-0",
+        docFullscreen ? "pointer-events-none opacity-0" : "opacity-100",
       )}
     >
       <button

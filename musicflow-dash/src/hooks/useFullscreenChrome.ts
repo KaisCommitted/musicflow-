@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 
 /**
- * Tracks real (OS-level) fullscreen state and whether window/player chrome — the Electron
- * title bar, the full-screen player's own header — should currently be shown.
- *
- * Outside real fullscreen, chrome always shows (it's just the windowed app). Inside it, an
- * immersive view showing its own permanent chrome on top defeats the point, but hiding it
- * outright strands the only way back out — so it's idle-hidden instead: visible while the
- * mouse is moving, fading out 1s after it stops, back the instant it moves again. Shared by
- * TitleBar and FullScreenPlayer so both hide/reveal in lockstep off one source of truth.
+ * Tracks real (OS-level) fullscreen state, and — when `trackMouseIdle` is on — whether the
+ * mouse has gone idle (no movement for 1s). Callers combine `docFullscreen`/`mouseIdle`
+ * themselves into whatever visibility rule fits: the title bar only ever cares about
+ * `docFullscreen` (never shows in real fullscreen, otherwise always on — it's independent of
+ * whether the full-screen player is even open); the full-screen player's own header idle-
+ * reveals in its normal windowed view but never at all in real fullscreen; its lyrics controls
+ * and style switcher idle-reveal in both. One shared hook, one mouse listener, three different
+ * combinations of the same two booleans.
  */
-export function useFullscreenChrome() {
+export function useFullscreenChrome(trackMouseIdle = false) {
   const [docFullscreen, setDocFullscreen] = useState(() => !!document.fullscreenElement);
   const [mouseIdle, setMouseIdle] = useState(false);
 
@@ -21,10 +21,12 @@ export function useFullscreenChrome() {
   }, []);
 
   useEffect(() => {
-    if (!docFullscreen) {
+    if (!trackMouseIdle) {
       setMouseIdle(false);
       return;
     }
+    // Starts "active" (grace period) so chrome is visible the instant this turns on, rather
+    // than requiring a mouse move first.
     setMouseIdle(false);
     let timeout: ReturnType<typeof setTimeout>;
     const arm = () => {
@@ -41,7 +43,7 @@ export function useFullscreenChrome() {
       window.removeEventListener("mousemove", onMove);
       clearTimeout(timeout);
     };
-  }, [docFullscreen]);
+  }, [trackMouseIdle]);
 
-  return { docFullscreen, showChrome: !docFullscreen || !mouseIdle };
+  return { docFullscreen, mouseIdle };
 }

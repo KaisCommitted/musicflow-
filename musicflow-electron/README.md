@@ -37,9 +37,19 @@ they're gitignored (binary, not something to commit) and bundled by `musicflow-b
 Place your own copies there, or see `.github/workflows/release.yml` for where CI fetches them
 from.
 
+On macOS, `npm run dist:mac` does the equivalent (`build:backend:mac`, which uses `python3`,
+then `electron-builder --mac`), producing a `.dmg`/`.zip` under `release/` for whichever arch
+you're building on. Same deal, no `.exe` suffix: `musicflow-api/bin/ffmpeg`, `ffprobe`, `deno`,
+and `node` must exist first, and `build/icon.icns` / `build/icon.png` must exist too (CI
+generates both from `musicflow-dash/public/brand/musicflow-mark-transparent.svg` — see the
+"Generate mac app icon" step in `.github/workflows/release.yml` for the exact commands if
+building locally). Also unsigned — macOS Gatekeeper blocks the first launch, worked around with
+right-click → Open instead of double-clicking.
+
 ## Releasing
 
 Push a tag matching `v*.*.*` (or run the "Release" workflow manually from the Actions tab) — CI
-builds the installer and publishes it to GitHub Releases. The package version comes from the tag,
-not `package.json`. In-app auto-update isn't wired up (electron-builder's publish step still
-produces the manifest for it, so adding that later doesn't require repackaging anything).
+builds the Windows and macOS (x64 + arm64) installers and publishes all of them to GitHub
+Releases. The package version comes from the tag, not `package.json`. In-app auto-update isn't
+wired up (electron-builder's publish step still produces the manifest for it, so adding that
+later doesn't require repackaging anything).

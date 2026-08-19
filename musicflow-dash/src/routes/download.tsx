@@ -30,6 +30,7 @@ import {
   jobArtworkUrl,
   openYoutubeInBrowser,
   resolveSpotifyPlaylists,
+  resolveYoutubePlaylists,
   retryHistoryItem,
   scanYoutubeCookieBrowsers,
   setupYoutubeCookies,
@@ -291,18 +292,21 @@ const PAGE_SIZE = 10;
 
 function DownloadPage() {
   const [tab, setTab] = useState<"download" | "history">("download");
-  const [inputMode, setInputMode] = useState<"songs" | "spotify">("songs");
+  const [inputMode, setInputMode] = useState<"songs" | "spotify" | "youtube">("songs");
   const [text, setText] = useState("");
   const [spotifyText, setSpotifyText] = useState("");
   const [spotifyResolving, setSpotifyResolving] = useState(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
+  const [youtubeText, setYoutubeText] = useState("");
+  const [youtubeResolving, setYoutubeResolving] = useState(false);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const {
     jobId,
     status,
     items,
     error,
-    spotifyPlaylistResults,
+    playlistImportResults,
     start,
     pause,
     resume,
@@ -327,6 +331,11 @@ function DownloadPage() {
     .filter(Boolean);
 
   const spotifyUrls = spotifyText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const youtubeUrls = youtubeText
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
@@ -357,7 +366,11 @@ function DownloadPage() {
       await start(
         ok.flatMap((p) => p.queries),
         {
-          playlists: ok.map((p) => ({ name: p.name, queries: p.queries, ...(p.truncated ? { truncated: true } : {}) })),
+          playlists: ok.map((p) => ({
+            name: p.name,
+            queries: p.queries,
+            ...(p.truncated ? { note: "Only the first 100 tracks could be read from Spotify" } : {}),
+          })),
           resolveFailures: failed.map((f) => ({ name: f.url, error: f.error! })),
         },
       );
@@ -366,6 +379,42 @@ function DownloadPage() {
       setSpotifyError(e instanceof Error ? e.message : String(e));
     } finally {
       setSpotifyResolving(false);
+    }
+  };
+
+  const handleYoutubeStart = async () => {
+    if (!youtubeUrls.length) return;
+    setYoutubeResolving(true);
+    setYoutubeError(null);
+    try {
+      const { playlists } = await resolveYoutubePlaylists(youtubeUrls);
+      const ok = playlists.filter(
+        (p): p is typeof p & { name: string; queries: string[] } => !!p.queries?.length,
+      );
+      const failed = playlists.filter((p) => p.error);
+      if (!ok.length) {
+        setYoutubeError(
+          failed.map((f) => `${f.url} — ${f.error}`).join("\n") || "Couldn't read any of those playlists.",
+        );
+        return;
+      }
+      setPage(0);
+      await start(
+        ok.flatMap((p) => p.queries),
+        {
+          playlists: ok.map((p) => ({
+            name: p.name,
+            queries: p.queries,
+            ...(p.truncated ? { note: "Only the first 300 videos could be read from this playlist" } : {}),
+          })),
+          resolveFailures: failed.map((f) => ({ name: f.url, error: f.error! })),
+        },
+      );
+      setYoutubeText("");
+    } catch (e) {
+      setYoutubeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setYoutubeResolving(false);
     }
   };
 
@@ -419,17 +468,20 @@ function DownloadPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {inputMode === "songs"
                   ? 'One song per line — "Artist – Title" works best.'
-                  : "One Spotify playlist link per line — every track gets searched and downloaded from YouTube."}
+                  : inputMode === "spotify"
+                    ? "One Spotify playlist link per line — every track gets searched and downloaded from YouTube."
+                    : "One YouTube playlist link per line — every video gets downloaded and tagged with matched metadata."}
               </p>
 
               <Tabs
                 value={inputMode}
-                onValueChange={(v) => setInputMode(v as "songs" | "spotify")}
+                onValueChange={(v) => setInputMode(v as "songs" | "spotify" | "youtube")}
                 className="mt-6"
               >
                 <TabsList>
                   <TabsTrigger value="songs">Songs</TabsTrigger>
                   <TabsTrigger value="spotify">Spotify playlist</TabsTrigger>
+                  <TabsTrigger value="youtube">YouTube playlist</TabsTrigger>
                 </TabsList>
               </Tabs>
 
@@ -457,7 +509,7 @@ function DownloadPage() {
                     </div>
                     {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
                   </>
-                ) : (
+                ) : inputMode === "spotify" ? (
                   <>
                     <textarea
                       value={spotifyText}
@@ -487,6 +539,40 @@ function DownloadPage() {
                     {spotifyError && (
                       <p className="mt-3 whitespace-pre-line text-center text-xs text-destructive">
                         {spotifyError}
+                      </p>
+                    )}
+                    {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
+                  </>
+                ) : (
+                  <>
+                    <textarea
+                      value={youtubeText}
+                      onChange={(e) => setYoutubeText(e.target.value)}
+                      rows={12}
+                      placeholder={
+                        "https://www.youtube.com/playlist?list=...\nhttps://www.youtube.com/playlist?list=..."
+                      }
+                      className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
+                    />
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        onClick={() => void handleYoutubeStart()}
+                        disabled={!youtubeUrls.length || youtubeResolving}
+                        className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+                      >
+                        {youtubeResolving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                        {youtubeResolving
+                          ? "Reading playlist…"
+                          : `Import & Download${youtubeUrls.length ? ` (${youtubeUrls.length})` : ""}`}
+                      </button>
+                    </div>
+                    {youtubeError && (
+                      <p className="mt-3 whitespace-pre-line text-center text-xs text-destructive">
+                        {youtubeError}
                       </p>
                     )}
                     {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
@@ -601,10 +687,10 @@ function DownloadPage() {
                 )}
               </div>
 
-              {/* Spotify playlist import results */}
-              {spotifyPlaylistResults && spotifyPlaylistResults.length > 0 && (
+              {/* Playlist import results (Spotify or YouTube) */}
+              {playlistImportResults && playlistImportResults.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  {spotifyPlaylistResults.map((r, i) => (
+                  {playlistImportResults.map((r, i) => (
                     <div
                       key={`${r.name}-${i}`}
                       className="surface flex items-center gap-3 px-4 py-3 text-sm"

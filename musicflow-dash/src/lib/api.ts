@@ -135,6 +135,26 @@ export const resolveSpotifyPlaylists = (urls: string[]) =>
     body: JSON.stringify({ urls }),
   });
 
+export interface YoutubeResolvedPlaylist {
+  url: string;
+  /** Present when this link resolved successfully. */
+  name?: string;
+  /** "Artist - Title" queries, one per video — feed straight into startDownload(). */
+  queries?: string[];
+  /** Present when this link failed to resolve. */
+  error?: string;
+  /** True when the playlist has more videos than were returned (capped server-side). */
+  truncated?: boolean;
+}
+
+/** Reads one or more YouTube playlist links and returns each as a track-query list, same
+ * shape (and same downstream use) as resolveSpotifyPlaylists. */
+export const resolveYoutubePlaylists = (urls: string[]) =>
+  req<{ playlists: YoutubeResolvedPlaylist[] }>("/api/youtube/resolve", {
+    method: "POST",
+    body: JSON.stringify({ urls }),
+  });
+
 export const getJobStatus = (jobId: string) => req<JobStatus>(`/api/status/${jobId}`);
 
 export const stopJob = (jobId: string) => req<unknown>(`/api/stop/${jobId}`, { method: "POST" });

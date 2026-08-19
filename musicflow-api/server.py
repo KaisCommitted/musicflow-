@@ -23,6 +23,7 @@ import discord_rpc
 import scrobbling
 import lastfm
 import spotify_client
+import youtube_playlist
 
 import yt_dlp
 
@@ -585,6 +586,42 @@ def resolve_spotify_playlists():
             continue
         if not tracks:
             results.append({"url": url, "error": "That playlist has no tracks"})
+            continue
+        queries = [f"{t['artist']} - {t['title']}" if t["artist"] else t["title"] for t in tracks]
+        entry = {"url": url, "name": name, "queries": queries}
+        if truncated:
+            entry["truncated"] = True
+        results.append(entry)
+
+    return jsonify({"playlists": results})
+
+
+@app.route("/api/youtube/resolve", methods=["POST"])
+def resolve_youtube_playlists():
+    """Reads one or more YouTube playlist links and turns each into a track list (same
+    "Artist - Title" query shape as any hand-typed song). The caller feeds the resulting
+    queries into /api/start same as Spotify playlist import — each one gets searched and
+    downloaded through the normal pipeline rather than pulling the playlist's own videos
+    directly, so it still gets proper metadata/artwork/lyrics matching."""
+    data = request.get_json()
+    urls = [u.strip() for u in data.get("urls", []) if u.strip()]
+    if not urls:
+        return jsonify({"error": "No playlist links provided"}), 400
+
+    results = []
+    for url in urls:
+        playlist_id = youtube_playlist.extract_playlist_id(url)
+        if not playlist_id:
+            results.append({"url": url, "error": "Not a recognizable YouTube playlist link"})
+            continue
+        try:
+            name, tracks, truncated = youtube_playlist.get_playlist_tracks(playlist_id)
+        except RuntimeError as e:
+            results.append({"url": url, "error": str(e)})
+            continue
+        except Exception as e:
+            log.error("[youtube-playlist] Failed to resolve %s: %s", url, e)
+            results.append({"url": url, "error": "Something went wrong reading that playlist"})
             continue
         queries = [f"{t['artist']} - {t['title']}" if t["artist"] else t["title"] for t in tracks]
         entry = {"url": url, "name": name, "queries": queries}

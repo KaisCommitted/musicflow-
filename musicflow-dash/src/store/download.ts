@@ -18,17 +18,18 @@ import { useLibrary } from "@/store/library";
 
 const JOB_LOST_MESSAGE = "This job no longer exists on the server (likely a backend restart) — start a new one.";
 
-/** One Spotify playlist that fed into the current job — the exact query strings it
- * contributed, so completed downloads can be traced back to it once the job finishes. */
-export interface SpotifyPlaylistPlan {
+/** One imported playlist (Spotify or YouTube) that fed into the current job — the exact
+ * query strings it contributed, so completed downloads can be traced back to it once the
+ * job finishes. */
+export interface PlaylistImportPlan {
   name: string;
   queries: string[];
-  /** True when Spotify's embed page (the no-login source for this data) capped out
-   * at 100 tracks — the playlist may have more that never got queued. */
-  truncated?: boolean;
+  /** Set by the caller when the source playlist was capped (e.g. Spotify's no-login embed
+   * page tops out at 100 tracks) — shown as-is next to the created playlist. */
+  note?: string;
 }
 
-export interface SpotifyImportResult {
+export interface PlaylistImportResult {
   name: string;
   ok: boolean;
   error?: string;
@@ -42,13 +43,13 @@ interface DownloadState {
   items: DownloadItem[];
   error: string | null;
   polling: boolean;
-  spotifyPlaylists: SpotifyPlaylistPlan[];
-  spotifyPlaylistsApplied: boolean;
-  spotifyPlaylistResults: SpotifyImportResult[] | null;
+  playlistImports: PlaylistImportPlan[];
+  playlistImportsApplied: boolean;
+  playlistImportResults: PlaylistImportResult[] | null;
 
   start: (
     queries: string[],
-    opts?: { playlists?: SpotifyPlaylistPlan[]; resolveFailures?: { name: string; error: string }[] },
+    opts?: { playlists?: PlaylistImportPlan[]; resolveFailures?: { name: string; error: string }[] },
   ) => Promise<void>;
   pause: () => void;
   resume: () => void;
@@ -59,7 +60,7 @@ interface DownloadState {
   _stopPolling: () => void;
   _resumeIfNeeded: () => void;
   _handleJobError: (e: unknown) => void;
-  _applySpotifyPlaylists: () => Promise<void>;
+  _applyPlaylistImports: () => Promise<void>;
 
   playableSongs: () => Song[];
 }
@@ -74,9 +75,9 @@ export const useDownload = create<DownloadState>()(
       items: [],
       error: null,
       polling: false,
-      spotifyPlaylists: [],
-      spotifyPlaylistsApplied: false,
-      spotifyPlaylistResults: null,
+      playlistImports: [],
+      playlistImportsApplied: false,
+      playlistImportResults: null,
 
       start: async (queries, opts) => {
         get()._stopPolling();
@@ -85,9 +86,9 @@ export const useDownload = create<DownloadState>()(
           error: null,
           status: null,
           items: [],
-          spotifyPlaylists: opts?.playlists ?? [],
-          spotifyPlaylistsApplied: false,
-          spotifyPlaylistResults: resolveFailures.length
+          playlistImports: opts?.playlists ?? [],
+          playlistImportsApplied: false,
+          playlistImportResults: resolveFailures.length
             ? resolveFailures.map((f) => ({ ...f, ok: false, count: 0 }))
             : null,
         });
@@ -138,9 +139,9 @@ export const useDownload = create<DownloadState>()(
           status: null,
           items: [],
           error: null,
-          spotifyPlaylists: [],
-          spotifyPlaylistsApplied: false,
-          spotifyPlaylistResults: null,
+          playlistImports: [],
+          playlistImportsApplied: false,
+          playlistImportResults: null,
         });
       },
 
@@ -168,7 +169,7 @@ export const useDownload = create<DownloadState>()(
                 extra--;
                 if (extra <= 0) {
                   clearInterval(finalPoll);
-                  void get()._applySpotifyPlaylists();
+                  void get()._applyPlaylistImports();
                 }
               }, 2000);
               get()._stopPolling();
@@ -201,20 +202,20 @@ export const useDownload = create<DownloadState>()(
       },
 
       // Runs once per job, after the job (plus its final metadata-catchup polls) is done.
-      // Traces each Spotify playlist's own queries back to the items that downloaded from
+      // Traces each imported playlist's own queries back to the items that downloaded from
       // them, and creates a matching Musicflow playlist out of whichever ones landed.
-      _applySpotifyPlaylists: async () => {
-        const { spotifyPlaylists, spotifyPlaylistsApplied, items } = get();
-        if (!spotifyPlaylists.length || spotifyPlaylistsApplied) return;
-        set({ spotifyPlaylistsApplied: true });
+      _applyPlaylistImports: async () => {
+        const { playlistImports, playlistImportsApplied, items } = get();
+        if (!playlistImports.length || playlistImportsApplied) return;
+        set({ playlistImportsApplied: true });
 
         const pathByQuery = new Map<string, string>();
         for (const i of items) {
           if ((i.status === "done" || i.status === "skipped") && i.path) pathByQuery.set(i.query, i.path);
         }
 
-        const created: SpotifyImportResult[] = [];
-        for (const plan of spotifyPlaylists) {
+        const created: PlaylistImportResult[] = [];
+        for (const plan of playlistImports) {
           const paths = [...new Set(plan.queries.map((q) => pathByQuery.get(q)).filter((p): p is string => !!p))];
           if (!paths.length) {
             created.push({ name: plan.name, ok: false, error: "No songs downloaded", count: 0 });
@@ -225,15 +226,14 @@ export const useDownload = create<DownloadState>()(
           let n = 2;
           while (useLibrary.getState().playlists.some((p) => p.name === name)) name = `${plan.name} (${n++})`;
           const r = await useLibrary.getState().createPlaylistWithSongs(name, paths);
-          const note = plan.truncated ? "Only the first 100 tracks could be read from Spotify" : undefined;
           created.push(
             r.ok
-              ? { name, ok: true, count: paths.length, ...(note ? { note } : {}) }
+              ? { name, ok: true, count: paths.length, ...(plan.note ? { note: plan.note } : {}) }
               : { name, ok: false, error: r.error ?? "Couldn't create the playlist", count: paths.length },
           );
         }
 
-        set((s) => ({ spotifyPlaylistResults: [...(s.spotifyPlaylistResults ?? []), ...created] }));
+        set((s) => ({ playlistImportResults: [...(s.playlistImportResults ?? []), ...created] }));
       },
 
       playableSongs: () => {
@@ -261,9 +261,9 @@ export const useDownload = create<DownloadState>()(
         status: state.status,
         items: state.items,
         error: state.error,
-        spotifyPlaylists: state.spotifyPlaylists,
-        spotifyPlaylistsApplied: state.spotifyPlaylistsApplied,
-        spotifyPlaylistResults: state.spotifyPlaylistResults,
+        playlistImports: state.playlistImports,
+        playlistImportsApplied: state.playlistImportsApplied,
+        playlistImportResults: state.playlistImportResults,
       }),
       onRehydrate: () => (state) => {
         // Resume polling if the job was still running when the page refreshed

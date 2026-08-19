@@ -5,6 +5,7 @@ import {
   comboFromEvent,
   effectiveGlobalBindings,
   isCapturingKeybind,
+  parseCustomVolumeKeybinds,
   parseKeybinds,
   type KeybindActionId,
 } from "@/lib/keybinds";
@@ -17,18 +18,24 @@ function isTypingTarget(el: EventTarget | null) {
   return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
 }
 
-// While a lyrics-offset key (Up/Down by default) is held, native OS key-repeat re-fires keydown
-// with e.repeat=true — ramp the step size the longer it's held so it "keeps incrementing fast"
-// without a hand-rolled setInterval. Resets on keyup.
+// While a lyrics-offset or volume key (all Up/Down by default) is held, native OS key-repeat
+// re-fires keydown with e.repeat=true — ramp the step size the longer it's held so it "keeps
+// incrementing fast" without a hand-rolled setInterval. Resets on keyup.
 let holdCount = 0;
 function accelStep(e: KeyboardEvent): number {
   holdCount = e.repeat ? Math.min(holdCount + 1, 40) : 0;
   return Math.min(1 + holdCount * 0.15, 3);
 }
 
+const VOLUME_STEP = 0.025;
+// Round to the nearest half percent so repeated 2.5%-scaled steps don't drift off the
+// intended increment the way rounding to a whole percent would.
+const roundVolume = (v: number) => Math.round(v * 200) / 200;
+
 /** Runs one keybind action. Shared by the in-app DOM listener (below, gets a real KeyboardEvent
- * so lyrics-offset can accelerate on held-key repeat) and Electron's global-shortcut IPC (fires
- * once per press with just the action id, no repeat info — held-key accel doesn't apply there). */
+ * so volume and lyrics-offset can accelerate on held-key repeat) and Electron's global-shortcut
+ * IPC (fires once per press with just the action id, no repeat info — held-key accel doesn't
+ * apply there). */
 function runKeybindAction(action: KeybindActionId, e?: KeyboardEvent) {
   const s = usePlayer.getState();
   switch (action) {
@@ -58,11 +65,11 @@ function runKeybindAction(action: KeybindActionId, e?: KeyboardEvent) {
       break;
     case "volume-up":
       e?.preventDefault();
-      s.setVolume(Math.min(1, Math.round((s.volume + 0.05) * 100) / 100));
+      s.setVolume(Math.min(1, roundVolume(s.volume + VOLUME_STEP * (e ? accelStep(e) : 1))));
       break;
     case "volume-down":
       e?.preventDefault();
-      s.setVolume(Math.max(0, Math.round((s.volume - 0.05) * 100) / 100));
+      s.setVolume(Math.max(0, roundVolume(s.volume - VOLUME_STEP * (e ? accelStep(e) : 1))));
       break;
     case "lyrics-offset-later":
       if (s.fullscreen && s.lyricsSynced) {
@@ -87,12 +94,24 @@ export function useKeyboardShortcuts() {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || isCapturingKeybind()) return;
 
-      const bindings = parseKeybinds(useLibrary.getState().settings.keybinds);
+      const settings = useLibrary.getState().settings;
+      const bindings = parseKeybinds(settings.keybinds);
       const combo = comboFromEvent(e);
       const action = (Object.keys(bindings) as KeybindActionId[]).find(
         (id) => bindings[id] === combo,
       );
-      if (action) runKeybindAction(action, e);
+      if (action) {
+        runKeybindAction(action, e);
+        return;
+      }
+
+      const customVolume = parseCustomVolumeKeybinds(settings.customVolumeKeybinds).find(
+        (c) => c.combo === combo,
+      );
+      if (customVolume) {
+        e.preventDefault();
+        usePlayer.getState().setVolume(customVolume.percent / 100);
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {

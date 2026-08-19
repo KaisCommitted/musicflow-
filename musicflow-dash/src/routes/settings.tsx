@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Globe, Moon, RefreshCw, Sun } from "lucide-react";
+import { Globe, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
@@ -22,9 +22,11 @@ import {
   formatCombo,
   GLOBAL_ELIGIBLE_CATEGORY,
   KEYBIND_ACTIONS,
+  parseCustomVolumeKeybinds,
   parseGlobalKeybinds,
   parseKeybinds,
   setCapturingKeybind,
+  type CustomVolumeKeybind,
   type KeybindActionId,
   type KeybindGlobalMode,
 } from "@/lib/keybinds";
@@ -154,6 +156,45 @@ function GlobalToggle({
     >
       <Globe className="h-3.5 w-3.5" />
     </button>
+  );
+}
+
+/** One user-defined "jump to X% volume" shortcut — percent input, key capture, and a remove
+ * button. Any number of these can exist at once. */
+function CustomVolumeRow({
+  entry,
+  onPercentChange,
+  onComboChange,
+  onRemove,
+}: {
+  entry: CustomVolumeKeybind;
+  onPercentChange: (percent: number) => void;
+  onComboChange: (combo: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Row title={`Set volume to ${entry.percent}%`} description="Jumps straight to this volume level.">
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={entry.percent}
+          onChange={(e) =>
+            onPercentChange(Math.min(100, Math.max(0, Math.round(Number(e.target.value)))))
+          }
+          className="w-16 rounded-lg border border-border bg-transparent px-2 py-1.5 text-xs tabular-nums"
+        />
+        <KeybindCapture value={entry.combo} onChange={onComboChange} />
+        <button
+          onClick={onRemove}
+          title="Remove shortcut"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </Row>
   );
 }
 
@@ -510,19 +551,32 @@ function YoutubeSection() {
 
 function SettingsPage() {
   const { settings, updateSettings, refresh, loading, songs } = useLibrary();
+  const [editingKeybinds, setEditingKeybinds] = useState(false);
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     updateSettings({ [key]: value } as Partial<Settings>);
 
   const keybinds = parseKeybinds(settings.keybinds);
+  const customVolumeKeybinds = parseCustomVolumeKeybinds(settings.customVolumeKeybinds);
+
+  // A combo can only be bound once across both the fixed actions and the custom volume
+  // shortcuts. Each handler below computes the full next value for whichever key(s) it touches
+  // in one pass — never two dependent `set` calls on the same key — so a clear-elsewhere and
+  // the new assignment can't clobber each other.
   const rebind = (actionId: KeybindActionId, combo: string) => {
-    const next = { ...keybinds };
-    // Two actions can't share a combo — whichever one had it loses it.
-    for (const id of Object.keys(next) as KeybindActionId[]) {
-      if (id !== actionId && next[id] === combo) next[id] = "";
+    const nextBindings = { ...keybinds };
+    for (const id of Object.keys(nextBindings) as KeybindActionId[]) {
+      if (id !== actionId && nextBindings[id] === combo) nextBindings[id] = "";
     }
-    next[actionId] = combo;
-    set("keybinds", JSON.stringify(next));
+    nextBindings[actionId] = combo;
+    set("keybinds", JSON.stringify(nextBindings));
+
+    if (customVolumeKeybinds.some((c) => c.combo === combo)) {
+      set(
+        "customVolumeKeybinds",
+        JSON.stringify(customVolumeKeybinds.map((c) => (c.combo === combo ? { ...c, combo: "" } : c))),
+      );
+    }
   };
   const resetKeybinds = () => set("keybinds", "");
 
@@ -532,6 +586,30 @@ function SettingsPage() {
     if (on) next.add(actionId);
     else next.delete(actionId);
     set("globalKeybinds", JSON.stringify([...next]));
+  };
+
+  const addCustomVolumeKeybind = () => {
+    const entry: CustomVolumeKeybind = { id: crypto.randomUUID(), combo: "", percent: 50 };
+    set("customVolumeKeybinds", JSON.stringify([...customVolumeKeybinds, entry]));
+  };
+  const updateCustomVolumeKeybind = (id: string, patch: Partial<CustomVolumeKeybind>) => {
+    let nextCustom = customVolumeKeybinds.map((c) => (c.id === id ? { ...c, ...patch } : c));
+    if (patch.combo) {
+      nextCustom = nextCustom.map((c) =>
+        c.id !== id && c.combo === patch.combo ? { ...c, combo: "" } : c,
+      );
+      if ((Object.values(keybinds) as string[]).includes(patch.combo)) {
+        const nextBindings = { ...keybinds };
+        for (const bid of Object.keys(nextBindings) as KeybindActionId[]) {
+          if (nextBindings[bid] === patch.combo) nextBindings[bid] = "";
+        }
+        set("keybinds", JSON.stringify(nextBindings));
+      }
+    }
+    set("customVolumeKeybinds", JSON.stringify(nextCustom));
+  };
+  const removeCustomVolumeKeybind = (id: string) => {
+    set("customVolumeKeybinds", JSON.stringify(customVolumeKeybinds.filter((c) => c.id !== id)));
   };
 
   return (
@@ -607,6 +685,12 @@ function SettingsPage() {
             onChange={(v) => set("fetchLyricsAutomatically", v)}
           />
         </Row>
+        <Row
+          title="Hide unsynced lyrics"
+          description="Only show lyrics with timing data — plain lyrics are treated as none, showing the centered artwork instead."
+        >
+          <Toggle on={settings.hideUnsyncedLyrics} onChange={(v) => set("hideUnsyncedLyrics", v)} />
+        </Row>
       </div>
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -630,56 +714,93 @@ function SettingsPage() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Keybinds
         </h2>
-        <button
-          onClick={resetKeybinds}
-          className="text-xs text-muted-foreground transition-colors hover:text-primary"
-        >
-          Reset to defaults
-        </button>
+        <div className="flex items-center gap-3">
+          {editingKeybinds && (
+            <button
+              onClick={resetKeybinds}
+              className="text-xs text-muted-foreground transition-colors hover:text-primary"
+            >
+              Reset to defaults
+            </button>
+          )}
+          <button
+            onClick={() => setEditingKeybinds((v) => !v)}
+            className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            {editingKeybinds ? "Done" : "Edit shortcuts"}
+          </button>
+        </div>
       </div>
-      <div className="mt-3 max-w-3xl space-y-3">
-        <Row
-          title="Global keybinds"
-          description="Let Playback keybinds work even while Musicflow isn't the focused window. Only combos with a modifier (Ctrl / Shift / Alt) are eligible — plain keys stay in-app only, so they don't block typing that key everywhere else."
-        >
-          <div className="flex gap-2">
-            {GLOBAL_MODES.map((m) => (
-              <button
-                key={m.value}
-                onClick={() => set("keybindGlobalMode", m.value)}
-                className={cn(
-                  "rounded-full border border-border px-4 py-2 text-xs transition-colors",
-                  settings.keybindGlobalMode === m.value
-                    ? "border-primary text-primary"
-                    : "text-muted-foreground",
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </Row>
+      {!editingKeybinds && (
+        <p className="mt-2 max-w-3xl text-xs text-muted-foreground">
+          Customize playback and lyrics shortcuts, or add your own volume-percent shortcuts.
+        </p>
+      )}
 
-        {(["Playback", "Lyrics"] as const).map((category) => (
-          <div key={category} className="space-y-3">
-            <p className="text-xs font-medium text-muted-foreground">{category}</p>
-            {KEYBIND_ACTIONS.filter((a) => a.category === category).map((a) => (
-              <Row key={a.id} title={a.label} description={a.description}>
-                <div className="flex items-center gap-2">
-                  <KeybindCapture value={keybinds[a.id]} onChange={(combo) => rebind(a.id, combo)} />
-                  {settings.keybindGlobalMode === "custom" && category === GLOBAL_ELIGIBLE_CATEGORY && (
-                    <GlobalToggle
-                      combo={keybinds[a.id]}
-                      on={globalSet.has(a.id)}
-                      onChange={(v) => toggleGlobal(a.id, v)}
-                    />
+      {editingKeybinds && (
+        <div className="mt-3 max-w-3xl space-y-3">
+          <Row
+            title="Global keybinds"
+            description="Let Playback keybinds work even while Musicflow isn't the focused window. Only combos with a modifier (Ctrl / Shift / Alt) are eligible — plain keys stay in-app only, so they don't block typing that key everywhere else."
+          >
+            <div className="flex gap-2">
+              {GLOBAL_MODES.map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => set("keybindGlobalMode", m.value)}
+                  className={cn(
+                    "rounded-full border border-border px-4 py-2 text-xs transition-colors",
+                    settings.keybindGlobalMode === m.value
+                      ? "border-primary text-primary"
+                      : "text-muted-foreground",
                   )}
-                </div>
-              </Row>
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </Row>
+
+          {(["Playback", "Lyrics"] as const).map((category) => (
+            <div key={category} className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground">{category}</p>
+              {KEYBIND_ACTIONS.filter((a) => a.category === category).map((a) => (
+                <Row key={a.id} title={a.label} description={a.description}>
+                  <div className="flex items-center gap-2">
+                    <KeybindCapture value={keybinds[a.id]} onChange={(combo) => rebind(a.id, combo)} />
+                    {settings.keybindGlobalMode === "custom" && category === GLOBAL_ELIGIBLE_CATEGORY && (
+                      <GlobalToggle
+                        combo={keybinds[a.id]}
+                        on={globalSet.has(a.id)}
+                        onChange={(v) => toggleGlobal(a.id, v)}
+                      />
+                    )}
+                  </div>
+                </Row>
+              ))}
+            </div>
+          ))}
+
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">Custom volume shortcuts</p>
+            {customVolumeKeybinds.map((entry) => (
+              <CustomVolumeRow
+                key={entry.id}
+                entry={entry}
+                onPercentChange={(percent) => updateCustomVolumeKeybind(entry.id, { percent })}
+                onComboChange={(combo) => updateCustomVolumeKeybind(entry.id, { combo })}
+                onRemove={() => removeCustomVolumeKeybind(entry.id)}
+              />
             ))}
+            <button
+              onClick={addCustomVolumeKeybind}
+              className="flex items-center gap-2 rounded-full border border-dashed border-border px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add volume shortcut
+            </button>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Backup

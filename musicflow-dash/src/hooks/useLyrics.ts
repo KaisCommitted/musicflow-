@@ -13,15 +13,6 @@ interface LyricsSourceOption {
   lines: LyricLine[];
 }
 
-const DEMO = `In the low light of a borrowed room
-Every echo learns your name
-Static bloom on the radio
-We were never quite the same
-Hold the line, hold the line
-Let the chorus carry through
-Neon freeway, engine hum
-Every mile is pointed back to you`;
-
 function parse(raw: string, duration: number): LyricLine[] {
   const lines = raw.split(/\r?\n/).filter((l) => l.trim().length);
   const timed: LyricLine[] = [];
@@ -40,8 +31,6 @@ function parse(raw: string, duration: number): LyricLine[] {
   const step = span / (lines.length + 1);
   return lines.map((text, i) => ({ time: step * (i + 1), text: text.trim() }));
 }
-
-const DEMO_METHOD = "demo";
 
 // Bridges the currently-mounted FullScreenPlayer's shiftOffset to the global keyboard shortcut
 // handler (which has no other way to reach into it). Re-registered on every render (see the
@@ -75,8 +64,8 @@ export function useLyrics(song: Song | null, duration: number) {
       .then((r) => {
         if (cancelled) return;
         if (r.sources.length === 0) {
-          setSources([{ method: DEMO_METHOD, synced: false, lines: parse(DEMO, duration) }]);
-          setActiveMethod(DEMO_METHOD);
+          setSources([]);
+          setActiveMethod(null);
           return;
         }
         setSources(
@@ -86,8 +75,8 @@ export function useLyrics(song: Song | null, duration: number) {
       })
       .catch(() => {
         if (cancelled) return;
-        setSources([{ method: DEMO_METHOD, synced: false, lines: parse(DEMO, duration) }]);
-        setActiveMethod(DEMO_METHOD);
+        setSources([]);
+        setActiveMethod(null);
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -100,7 +89,7 @@ export function useLyrics(song: Song | null, duration: number) {
   const active = sources.find((s) => s.method === activeMethod) ?? null;
 
   const switchSource = (method: string) => {
-    if (!song || method === DEMO_METHOD || method === activeMethod) return;
+    if (!song || method === activeMethod) return;
     setActiveMethod(method); // optimistic — the UI already knows this source's text
     void setLyricsSource(song.path, method).catch(() => undefined);
   };
@@ -111,7 +100,7 @@ export function useLyrics(song: Song | null, duration: number) {
   const shiftChain = useRef<Promise<unknown>>(Promise.resolve());
 
   const shiftOffset = (delta: number) => {
-    if (!song || !activeMethod || activeMethod === DEMO_METHOD) return;
+    if (!song || !activeMethod) return;
     const path = song.path;
     const method = activeMethod;
     // Instant visual feedback — shift the currently rendered lines immediately; the response

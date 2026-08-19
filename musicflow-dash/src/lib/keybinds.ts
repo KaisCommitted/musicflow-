@@ -26,8 +26,8 @@ export const KEYBIND_ACTIONS: KeybindAction[] = [
   { id: "previous-track", label: "Previous track", description: "Jump to the previous song", category: "Playback" },
   { id: "next-track", label: "Next track", description: "Skip to the next song", category: "Playback" },
   { id: "toggle-mute", label: "Mute / unmute", description: "Toggle volume mute", category: "Playback" },
-  { id: "volume-up", label: "Volume up", description: "Raise the volume 5%", category: "Playback" },
-  { id: "volume-down", label: "Volume down", description: "Lower the volume 5%", category: "Playback" },
+  { id: "volume-up", label: "Volume up", description: "Raise the volume 2.5% (hold to speed up)", category: "Playback" },
+  { id: "volume-down", label: "Volume down", description: "Lower the volume 2.5% (hold to speed up)", category: "Playback" },
   {
     id: "lyrics-offset-later",
     label: "Delay lyrics",
@@ -90,6 +90,24 @@ export function parseKeybinds(raw: string | undefined): Record<KeybindActionId, 
     return { ...DEFAULT_KEYBINDS, ...parsed };
   } catch {
     return DEFAULT_KEYBINDS;
+  }
+}
+
+/** A user-defined shortcut that jumps the volume straight to a fixed percentage, e.g.
+ * "Ctrl+Numpad1" -> 10%. Unlike the fixed KEYBIND_ACTIONS, there can be any number of these. */
+export interface CustomVolumeKeybind {
+  id: string;
+  combo: string;
+  /** 0-100 */
+  percent: number;
+}
+
+export function parseCustomVolumeKeybinds(raw: string | undefined): CustomVolumeKeybind[] {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as CustomVolumeKeybind[];
+  } catch {
+    return [];
   }
 }
 

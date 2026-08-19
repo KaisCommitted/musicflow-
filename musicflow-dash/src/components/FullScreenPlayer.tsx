@@ -27,6 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
+import { useLibrary } from "@/store/library";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
 import { useAudioFeatures } from "@/hooks/useAudioFeatures";
 import { useFullscreenChrome } from "@/hooks/useFullscreenChrome";
@@ -63,11 +64,12 @@ export function FullScreenPlayer() {
     useLyrics(fullscreen ? song : null, total);
   const active = activeLyricIndex(lines, currentTime);
   const listRef = useRef<HTMLDivElement>(null);
-  const realSources = sources.filter((s) => s.method !== "demo");
   // "normal" is the existing scrolling list; "big" shows the current line (plus neighbours,
   // all still in the list) at a larger size; "huge" shows only three lines total — the
   // previous and next lines greyed out, nothing else. Cycles normal -> big -> huge -> normal.
   // Sticky for the session, not persisted.
+  const hideUnsyncedLyrics = useLibrary((s) => s.settings.hideUnsyncedLyrics);
+  const hasLyrics = lines.length > 0 && !(hideUnsyncedLyrics && !synced);
   const [lyricsMode, setLyricsMode] = useState<"normal" | "big" | "huge">("normal");
   const isBigMode = synced && lyricsMode === "big";
   const isHugeMode = synced && lyricsMode === "huge";
@@ -238,8 +240,18 @@ export function FullScreenPlayer() {
               )}
             </AnimatePresence>
 
-            <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
-              <div className="flex flex-col items-center justify-center gap-8">
+            <div
+              className={cn(
+                "grid flex-1 gap-10 overflow-hidden px-14 pb-10",
+                hasLyrics ? "grid-cols-2" : "grid-cols-1",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex flex-col items-center justify-center gap-8",
+                  !hasLyrics && "mx-auto w-full max-w-md",
+                )}
+              >
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={song.id}
@@ -373,7 +385,8 @@ export function FullScreenPlayer() {
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-col">
+              {hasLyrics && (
+                <div className="flex min-h-0 flex-col">
                 {lines.length > 0 && (
                   <div
                     className={cn(
@@ -390,7 +403,7 @@ export function FullScreenPlayer() {
                       >
                         {synced ? "Synced" : "Plain"}
                       </span>
-                      {realSources.length > 1 && (
+                      {sources.length > 1 && (
                         <Popover>
                           <PopoverTrigger asChild>
                             <button
@@ -480,9 +493,7 @@ export function FullScreenPlayer() {
                     docFullscreen && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                   )}
                 >
-                  {lines.length === 0 ? (
-                    <p className="text-center text-sm text-muted-foreground">No lyrics found.</p>
-                  ) : !synced ? (
+                  {!synced ? (
                     // No timing data — just show the text, plainly, with no highlighting or scroll-tracking.
                     <div className="space-y-3 px-6 text-lg leading-relaxed text-foreground/80">
                       {lines.map((line, i) => (
@@ -571,6 +582,7 @@ export function FullScreenPlayer() {
                   )}
                 </div>
               </div>
+              )}
             </div>
 
             {/* Hidden until hovered — an immersive view shouldn't have a permanent row of

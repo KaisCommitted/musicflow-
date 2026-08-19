@@ -33,12 +33,17 @@ export interface Settings {
   autoScanOnStart: boolean;
   gaplessPlayback: boolean;
   fetchLyricsAutomatically: boolean;
+  /** When true, the full-screen player treats unsynced (plain, no timing data) lyrics as if
+   * there were none — showing the centered thumbnail view instead. */
+  hideUnsyncedLyrics: boolean;
   /** JSON-encoded Record<KeybindActionId, string>; "" means defaults. */
   keybinds: string;
   /** Whether Playback keybinds also work while Musicflow isn't focused (Electron only). */
   keybindGlobalMode: KeybindGlobalMode;
   /** JSON-encoded KeybindActionId[] — which ones are global when keybindGlobalMode is "custom". */
   globalKeybinds: string;
+  /** JSON-encoded CustomVolumeKeybind[] — user-defined "jump to X% volume" shortcuts. */
+  customVolumeKeybinds: string;
   /** Discord's Client ID is baked into the backend (discord_rpc.py) — it identifies the
    * Musicflow app to Discord, not any one Discord account, so there's nothing to configure. */
   discordEnabled: boolean;
@@ -99,9 +104,11 @@ const defaultSettings: Settings = {
   autoScanOnStart: true,
   gaplessPlayback: true,
   fetchLyricsAutomatically: true,
+  hideUnsyncedLyrics: false,
   keybinds: "",
   keybindGlobalMode: "off",
   globalKeybinds: "[]",
+  customVolumeKeybinds: "[]",
   discordEnabled: false,
   scrobblingEnabled: false,
   listenbrainzToken: "",
@@ -120,6 +127,7 @@ function parseSettings(raw: Record<string, string>): Settings {
     autoScanOnStart: raw["autoScanOnStart"] !== "false",
     gaplessPlayback: raw["gaplessPlayback"] !== "false",
     fetchLyricsAutomatically: raw["fetchLyricsAutomatically"] !== "false",
+    hideUnsyncedLyrics: raw["hideUnsyncedLyrics"] === "true",
     keybinds: raw["keybinds"] ?? "",
     keybindGlobalMode: (["off", "all", "custom"] as const).includes(
       raw["keybindGlobalMode"] as KeybindGlobalMode,
@@ -127,6 +135,7 @@ function parseSettings(raw: Record<string, string>): Settings {
       ? (raw["keybindGlobalMode"] as KeybindGlobalMode)
       : "off",
     globalKeybinds: raw["globalKeybinds"] ?? "[]",
+    customVolumeKeybinds: raw["customVolumeKeybinds"] ?? "[]",
     discordEnabled: raw["discordEnabled"] === "true",
     scrobblingEnabled: raw["scrobblingEnabled"] === "true",
     listenbrainzToken: raw["listenbrainzToken"] ?? "",
@@ -146,9 +155,11 @@ function serializeSettings(s: Settings): Record<string, string> {
     autoScanOnStart: String(s.autoScanOnStart),
     gaplessPlayback: String(s.gaplessPlayback),
     fetchLyricsAutomatically: String(s.fetchLyricsAutomatically),
+    hideUnsyncedLyrics: String(s.hideUnsyncedLyrics),
     keybinds: s.keybinds,
     keybindGlobalMode: s.keybindGlobalMode,
     globalKeybinds: s.globalKeybinds,
+    customVolumeKeybinds: s.customVolumeKeybinds,
     discordEnabled: String(s.discordEnabled),
     scrobblingEnabled: String(s.scrobblingEnabled),
     listenbrainzToken: s.listenbrainzToken,

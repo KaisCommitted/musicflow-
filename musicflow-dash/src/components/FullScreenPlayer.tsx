@@ -29,6 +29,7 @@ import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
 import { useAudioFeatures } from "@/hooks/useAudioFeatures";
+import { useFullscreenChrome } from "@/hooks/useFullscreenChrome";
 import { formatTime } from "@/lib/format";
 import { gradientFromString } from "@/lib/colors";
 import { lyricsSourceLabel } from "@/lib/lyricsSources";
@@ -67,7 +68,7 @@ export function FullScreenPlayer() {
   // neighbours) at a much larger size. Sticky for the session, not persisted.
   const [lyricsMode, setLyricsMode] = useState<"normal" | "big">("normal");
   const isBigMode = synced && lyricsMode === "big";
-  const [docFullscreen, setDocFullscreen] = useState(false);
+  const { docFullscreen, showChrome } = useFullscreenChrome();
   // Which full-screen background visualizer is active. Sticky for the session, not persisted —
   // same convention as lyricsMode above.
   const [styleId, setStyleId] = useState(DEFAULT_VISUALIZER_ID);
@@ -89,12 +90,6 @@ export function FullScreenPlayer() {
   useEffect(() => {
     setLyricsSynced(synced);
   }, [synced, setLyricsSynced]);
-
-  useEffect(() => {
-    const onChange = () => setDocFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
 
   // Exiting the immersive view (minimize, Escape, etc.) should also drop real fullscreen —
   // otherwise the browser/OS chrome stays hidden with nothing immersive left to show for it.
@@ -148,7 +143,13 @@ export function FullScreenPlayer() {
           transition={{ type: "spring", stiffness: 260, damping: 30 }}
           // top-9 (not inset-0) so it starts below the Electron title bar (TitleBar.tsx, h-9)
           // instead of covering it — same 36px whether or not that bar is actually rendered.
-          className="fixed inset-x-0 bottom-0 top-9 z-50 overflow-hidden"
+          // In real fullscreen the title bar itself idle-fades (useFullscreenChrome), so this
+          // goes edge-to-edge there instead, or fading it out would leave a dead strip of plain
+          // background where the bar used to sit.
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-50 overflow-hidden",
+            docFullscreen ? "top-0" : "top-9",
+          )}
         >
           <div className="absolute inset-0 scale-110 blur-3xl brightness-[var(--stage-bed-brightness)] saturate-150">
             {song.artwork ? (
@@ -164,40 +165,45 @@ export function FullScreenPlayer() {
           <div className="pointer-events-none absolute inset-0 bg-[image:var(--stage-veil)]" />
 
           <div className="relative flex h-full flex-col">
-            {/* Hidden in real (OS-level) fullscreen — an immersive view shouldn't still show its
-                own chrome on top of that. Escape still exits real fullscreen natively either
-                way, so there's no loss of a way back out. */}
-            {!docFullscreen && (
-              <div className="flex items-center justify-between px-6 py-5">
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.9, y: 2 }}
-                  onClick={() => setFullscreen(false)}
-                  aria-label="Minimize player"
-                  className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
-                >
-                  <ChevronDown className="h-5 w-5" />
-                </motion.button>
-                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                  Now Playing
-                </p>
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.9, y: 2 }}
-                  onClick={toggleDocFullscreen}
-                  aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
-                  className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
-                >
-                  <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
-                    {docFullscreen ? (
-                      <Minimize className="h-5 w-5" />
-                    ) : (
-                      <Maximize className="h-5 w-5" />
-                    )}
-                  </IconSwap>
-                </motion.button>
-              </div>
-            )}
+            {/* Outside real (OS-level) fullscreen this just always shows. Inside it, an
+                immersive view shouldn't permanently show its own chrome on top — but hiding it
+                outright would stand between the mouse and any way back out, so it idle-fades
+                instead (useFullscreenChrome): visible while the mouse moves, gone 1s after it
+                stops, same as the title bar above it. */}
+            <div
+              className={cn(
+                "flex items-center justify-between px-6 py-5 transition-opacity duration-300",
+                showChrome ? "opacity-100" : "pointer-events-none opacity-0",
+              )}
+            >
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.9, y: 2 }}
+                onClick={() => setFullscreen(false)}
+                aria-label="Minimize player"
+                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </motion.button>
+              <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                Now Playing
+              </p>
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.9, y: 2 }}
+                onClick={toggleDocFullscreen}
+                aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
+                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+              >
+                <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
+                  {docFullscreen ? (
+                    <Minimize className="h-5 w-5" />
+                  ) : (
+                    <Maximize className="h-5 w-5" />
+                  )}
+                </IconSwap>
+              </motion.button>
+            </div>
 
             <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
               <div className="flex flex-col items-center justify-center gap-8">

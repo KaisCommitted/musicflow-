@@ -8,13 +8,20 @@ import {
   onWindowMaximizedChange,
   toggleMaximizeWindow,
 } from "@/lib/electronBridge";
+import { useFullscreenChrome } from "@/hooks/useFullscreenChrome";
 import { cn } from "@/lib/utils";
 
 /** Replaces the native Windows title bar (main.js creates the window with `frame: false`) —
  * the bar itself is a drag handle, its buttons forward to the real BrowserWindow over IPC.
- * Renders nothing outside Electron (Vite dev / a plain browser tab already has its own). */
+ * Renders nothing outside Electron (Vite dev / a plain browser tab already has its own).
+ *
+ * This is the app's own window chrome, entirely separate from the full-screen player's own
+ * header — it stays mounted regardless of that view, so it needs its own fullscreen-idle
+ * fade (see useFullscreenChrome) or it would sit on top of an immersive real-fullscreen view
+ * forever, "exit"/minimize buttons and all. */
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
+  const { showChrome } = useFullscreenChrome();
 
   useEffect(() => {
     if (!isElectron()) return;
@@ -25,7 +32,12 @@ export function TitleBar() {
   if (!isElectron()) return null;
 
   return (
-    <div className="drag-region relative z-[100] flex h-9 shrink-0 items-center justify-end bg-sidebar">
+    <div
+      className={cn(
+        "drag-region relative z-[100] flex h-9 shrink-0 items-center justify-end bg-sidebar transition-opacity duration-300",
+        showChrome ? "opacity-100" : "pointer-events-none opacity-0",
+      )}
+    >
       <button
         onClick={minimizeWindow}
         aria-label="Minimize"

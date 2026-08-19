@@ -57,6 +57,8 @@ export function FullScreenPlayer() {
     muted,
     setVolume,
     toggleMute,
+    lyricsMode,
+    cycleLyricsMode,
   } = usePlayer();
   const song = usePlayer((s) => s.current());
   const total = duration || song?.duration || 0;
@@ -67,14 +69,11 @@ export function FullScreenPlayer() {
   // "normal" is the existing scrolling list; "big" shows the current line (plus neighbours,
   // all still in the list) at a larger size; "huge" shows only three lines total — the
   // previous and next lines greyed out, nothing else. Cycles normal -> big -> huge -> normal.
-  // Sticky for the session, not persisted.
+  // lyricsMode/cycleLyricsMode come from the player store, which persists it.
   const hideUnsyncedLyrics = useLibrary((s) => s.settings.hideUnsyncedLyrics);
   const hasLyrics = lines.length > 0 && !(hideUnsyncedLyrics && !synced);
-  const [lyricsMode, setLyricsMode] = useState<"normal" | "big" | "huge">("normal");
   const isBigMode = synced && lyricsMode === "big";
   const isHugeMode = synced && lyricsMode === "huge";
-  const cycleLyricsMode = () =>
-    setLyricsMode((m) => (m === "normal" ? "big" : m === "big" ? "huge" : "normal"));
   // Mouse-idle tracking runs whenever the immersive view itself is open at all (windowed or
   // real fullscreen) — see useFullscreenChrome for how the header vs. the lyrics
   // controls/style switcher each turn that into a different visibility rule below.
@@ -171,6 +170,7 @@ export function FullScreenPlayer() {
           // itself still leaves room there — see the pt-9 below — this is just the background
           // (art/visualizer/veil).
           className="fixed inset-x-0 bottom-0 top-0 z-50 overflow-hidden"
+          onDoubleClick={toggleDocFullscreen}
         >
           {/* Fully opaque backstop — the blurred bed's blur can leave faint edge fringing, and
               the veil below is a partial-alpha gradient by design (it's meant to let colour

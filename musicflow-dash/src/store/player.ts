@@ -33,6 +33,12 @@ interface PlayerState {
   sleepTimerEndAt: number | null;
   /** Pause when the current track finishes, instead of on a fixed timer. */
   sleepAtTrackEnd: boolean;
+  /** Full-screen lyrics display size — "big" shows the current line larger (still amid the
+   * scrolling list), "huge" shows only three lines centered. Persisted across restarts. */
+  lyricsMode: "normal" | "big" | "huge";
+  /** Playback position snapshotted on app close, used to resume roughly where playback left
+   * off on next launch. Not kept in sync on every tick — see the persist config below. */
+  resumeAt: number;
 
   current: () => Song | null;
   playQueue: (songs: Song[], index: number, context: PlayContext) => void;
@@ -54,6 +60,8 @@ interface PlayerState {
   setQueueOpen: (open: boolean) => void;
   setFullscreen: (open: boolean) => void;
   setLyricsSynced: (synced: boolean) => void;
+  /** Cycles the full-screen lyrics size: normal -> big -> huge -> normal. */
+  cycleLyricsMode: () => void;
   /** Pauses in `minutes` minutes; pass null to cancel. Overrides sleepAtTrackEnd. */
   setSleepTimer: (minutes: number | null) => void;
   setSleepAtTrackEnd: (v: boolean) => void;
@@ -168,6 +176,8 @@ export const usePlayer = create<PlayerState>()(
       lyricsSynced: false,
       sleepTimerEndAt: null,
       sleepAtTrackEnd: false,
+      lyricsMode: "normal",
+      resumeAt: 0,
 
       current: () => get().queue[get().index] ?? null,
 
@@ -302,6 +312,11 @@ export const usePlayer = create<PlayerState>()(
 
       setLyricsSynced: (synced) => set({ lyricsSynced: synced }),
 
+      cycleLyricsMode: () =>
+        set((s) => ({
+          lyricsMode: s.lyricsMode === "normal" ? "big" : s.lyricsMode === "big" ? "huge" : "normal",
+        })),
+
       setSleepTimer: (minutes) => {
         if (sleepTimeoutId) {
           clearTimeout(sleepTimeoutId);
@@ -332,7 +347,42 @@ export const usePlayer = create<PlayerState>()(
     {
       name: "musicflow-player",
       storage: createJSONStorage(() => dedupingLocalStorage),
-      partialize: (state) => ({ recentContexts: state.recentContexts }),
+      // Everything here changes only on explicit user actions (song change, a toggle, app
+      // close) — never on the frequent-tick fields (currentTime/duration), which is what
+      // keeps the dedupingLocalStorage guard above actually effective. See `resumeAt` for
+      // how playback position is captured without persisting on every tick.
+      partialize: (state) => ({
+        recentContexts: state.recentContexts,
+        volume: state.volume,
+        muted: state.muted,
+        shuffle: state.shuffle,
+        repeat: state.repeat,
+        lyricsMode: state.lyricsMode,
+        queue: state.queue,
+        index: state.index,
+        context: state.context,
+        resumeAt: state.resumeAt,
+      }),
+      // Restore the last song into the (paused) audio element on launch — always paused,
+      // regardless of whether it was playing or paused when the app closed, and seeked to
+      // where playback last was.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const song = state.queue[state.index];
+        if (!song) return;
+        load(song, false);
+        const el = getAudio();
+        if (el) el.currentTime = state.resumeAt;
+        usePlayer.setState({ currentTime: state.resumeAt, isPlaying: false });
+      },
     },
   ),
 );
+
+if (typeof window !== "undefined") {
+  // One explicit snapshot of the playback position on the way out, instead of persisting
+  // currentTime reactively (which updates several times a second while a song plays).
+  window.addEventListener("beforeunload", () => {
+    usePlayer.setState({ resumeAt: usePlayer.getState().currentTime });
+  });
+}

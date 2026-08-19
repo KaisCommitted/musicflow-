@@ -18,7 +18,9 @@ export const drift: Visualizer = {
         smooth += (clamp01(f.level * 1.1) - smooth) * (1 - Math.exp(-dt * 0.9));
 
         ctx.clearRect(0, 0, w, h);
-        ctx.globalCompositeOperation = isDark ? "lighter" : "source-over";
+        // "multiply" in light mode, not "source-over" — see ember.ts for why (additive/normal
+        // layering on a light bed washes toward flat white instead of reading as colour).
+        ctx.globalCompositeOperation = isDark ? "lighter" : "multiply";
 
         const t = f.time * 0.05;
         const layers = [
@@ -31,7 +33,7 @@ export const drift: Visualizer = {
           const x = (l.sx + Math.cos(t * l.sp) * 0.12) * w;
           const y = (l.sy + Math.sin(t * l.sp * 1.3) * 0.1) * h;
           const r = Math.min(w, h) * l.r * (1 + smooth * 0.16);
-          const a = (isDark ? 0.2 : 0.15) * (0.5 + smooth * 0.7);
+          const a = (isDark ? 0.2 : 0.36) * (0.5 + smooth * 0.7);
           const g = ctx.createRadialGradient(x, y, 0, x, y, r);
           g.addColorStop(0, rgba(l.c, a));
           g.addColorStop(1, rgba(l.c, 0));
@@ -43,7 +45,7 @@ export const drift: Visualizer = {
         const cy = h / 2;
         const haloR = Math.min(w, h) * (0.3 + smooth * 0.06 + Math.sin(f.time * 0.6) * 0.01);
         const hg = ctx.createRadialGradient(cx, cy, haloR * 0.2, cx, cy, haloR);
-        hg.addColorStop(0, rgba(accent, (isDark ? 0.3 : 0.2) * (0.4 + smooth * 0.6)));
+        hg.addColorStop(0, rgba(accent, (isDark ? 0.3 : 0.42) * (0.4 + smooth * 0.6)));
         hg.addColorStop(1, rgba(accent, 0));
         ctx.fillStyle = hg;
         ctx.fillRect(0, 0, w, h);

@@ -52,7 +52,12 @@ export const ember: Visualizer = {
         const drive = clamp01(f.level * 1.15);
 
         ctx.clearRect(0, 0, w, h);
-        ctx.globalCompositeOperation = isDark ? "lighter" : "source-over";
+        // "lighter" (additive) reads as vivid glow against a near-black bed. On a light bed the
+        // same additive layering just piles pale colour on pale colour toward flat white — the
+        // classic "washed out" look — so light mode uses "multiply" instead: overlapping shapes
+        // deepen/saturate toward each other rather than lightening further, which is what
+        // actually reads as colour (not haze) against a light background.
+        ctx.globalCompositeOperation = isDark ? "lighter" : "multiply";
 
         // ---- aurora fields --------------------------------------------------
         for (const b of blobs) {
@@ -69,7 +74,7 @@ export const ember: Visualizer = {
           const r = b.r * breathe * (1 + bandVal * 0.35 + f.beat * 0.06);
           const col: RGB =
             b.band === "bass" ? accent : b.band === "mid" ? mix(accent, accent2, 0.6) : accent2;
-          const alpha = (isDark ? 0.26 : 0.2) * (0.32 + bandVal * 0.8 + f.beat * 0.12);
+          const alpha = (isDark ? 0.26 : 0.8) * (0.32 + bandVal * 0.8 + f.beat * 0.12);
 
           const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
           g.addColorStop(0, rgba(col, alpha));
@@ -92,7 +97,7 @@ export const ember: Visualizer = {
           const ring = rings[i]!;
           ring.life += dt;
           ring.r += dt * (240 + ring.strength * 420);
-          const a = Math.max(0, 1 - ring.life / 1.4) ** 2 * ring.strength * (isDark ? 0.16 : 0.14);
+          const a = Math.max(0, 1 - ring.life / 1.4) ** 2 * ring.strength * (isDark ? 0.16 : 0.32);
           if (a <= 0.002) {
             rings.splice(i, 1);
             continue;
@@ -129,7 +134,7 @@ export const ember: Visualizer = {
           s.life += dt;
           s.y += s.vy * dt * (0.6 + f.level * 0.9);
           s.x += (s.vx + Math.sin(s.life * 1.4 + s.x * 0.01) * 12) * dt;
-          const a = Math.max(0, 1 - s.life / 7) * (isDark ? 0.55 : 0.35);
+          const a = Math.max(0, 1 - s.life / 7) * (isDark ? 0.55 : 0.6);
           if (a <= 0.002 || s.y < -20) {
             sparks.splice(i, 1);
             continue;
@@ -143,7 +148,7 @@ export const ember: Visualizer = {
         // ---- centre halo behind the artwork ---------------------------------
         const haloR = Math.min(w, h) * (0.24 + f.bass * 0.12 + f.beat * 0.03);
         const hg = ctx.createRadialGradient(cx, cy, haloR * 0.25, cx, cy, haloR * 1.9);
-        const haloA = (isDark ? 0.4 : 0.26) * (0.35 + f.level * 0.9);
+        const haloA = (isDark ? 0.4 : 0.7) * (0.35 + f.level * 0.9);
         hg.addColorStop(0, rgba(accent, haloA));
         hg.addColorStop(1, rgba(accent, 0));
         ctx.fillStyle = hg;
@@ -157,7 +162,7 @@ export const ember: Visualizer = {
           const ix = cx + Math.cos(t) * w * 0.18;
           const iy = cy + Math.sin(t * 0.8) * h * 0.16;
           const ig = ctx.createRadialGradient(ix, iy, 0, ix, iy, Math.min(w, h) * 0.7);
-          ig.addColorStop(0, rgba(accent2, idle * (isDark ? 0.12 : 0.09)));
+          ig.addColorStop(0, rgba(accent2, idle * (isDark ? 0.12 : 0.22)));
           ig.addColorStop(1, rgba(accent2, 0));
           ctx.fillStyle = ig;
           ctx.fillRect(0, 0, w, h);

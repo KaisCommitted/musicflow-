@@ -24,11 +24,13 @@ export const pulse: Visualizer = {
         const base = Math.min(w, h) * 0.235;
 
         ctx.clearRect(0, 0, w, h);
-        ctx.globalCompositeOperation = isDark ? "lighter" : "source-over";
+        // "multiply" in light mode, not "source-over" — see ember.ts for why (additive/normal
+        // layering on a light bed washes toward flat white instead of reading as colour).
+        ctx.globalCompositeOperation = isDark ? "lighter" : "multiply";
 
         // ambient bed so it is never empty
         const bg = ctx.createRadialGradient(cx, cy, base * 0.5, cx, cy, Math.max(w, h) * 0.75);
-        bg.addColorStop(0, rgba(accent, (isDark ? 0.22 : 0.16) * (0.35 + f.level)));
+        bg.addColorStop(0, rgba(accent, (isDark ? 0.22 : 0.4) * (0.35 + f.level)));
         bg.addColorStop(1, rgba(accent2, 0));
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, w, h);
@@ -53,7 +55,7 @@ export const pulse: Visualizer = {
           const y2 = cy + Math.sin(ang) * (inner + len);
           ctx.strokeStyle = rgba(
             mix(accent, accent2, clamp01(v * 1.4)),
-            (isDark ? 0.55 : 0.4) * (0.2 + v * 1.1),
+            (isDark ? 0.55 : 0.75) * (0.2 + v * 1.1),
           );
           ctx.lineWidth = 2 + v * 3;
           ctx.beginPath();
@@ -82,7 +84,7 @@ export const pulse: Visualizer = {
           p.v *= Math.exp(-dt * 1.1);
           p.r += p.v * dt;
           p.a += dt * 0.12;
-          const a = Math.max(0, 1 - p.life / p.ttl) ** 1.6 * (isDark ? 0.7 : 0.45);
+          const a = Math.max(0, 1 - p.life / p.ttl) ** 1.6 * (isDark ? 0.7 : 0.8);
           if (a <= 0.003) {
             parts.splice(i, 1);
             continue;

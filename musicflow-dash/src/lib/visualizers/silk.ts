@@ -24,12 +24,14 @@ export const silk: Visualizer = {
         phase += dt * (0.35 + drive * 1.1);
 
         ctx.clearRect(0, 0, w, h);
-        ctx.globalCompositeOperation = isDark ? "lighter" : "source-over";
+        // "multiply" in light mode, not "source-over" — see ember.ts for why (additive/normal
+        // layering on a light bed washes toward flat white instead of reading as colour).
+        ctx.globalCompositeOperation = isDark ? "lighter" : "multiply";
 
         // soft bed so the screen is never flat
         const bed = ctx.createLinearGradient(0, 0, w, h);
-        bed.addColorStop(0, rgba(accent, (isDark ? 0.14 : 0.1) * (0.4 + drive)));
-        bed.addColorStop(1, rgba(accent2, (isDark ? 0.1 : 0.07) * (0.3 + drive)));
+        bed.addColorStop(0, rgba(accent, (isDark ? 0.14 : 0.26) * (0.4 + drive)));
+        bed.addColorStop(1, rgba(accent2, (isDark ? 0.1 : 0.18) * (0.3 + drive)));
         ctx.fillStyle = bed;
         ctx.fillRect(0, 0, w, h);
 
@@ -46,7 +48,7 @@ export const silk: Visualizer = {
           const freq = 1.1 + t * 1.9;
           const speed = phase * (0.6 + t * 0.7) * (r % 2 === 0 ? 1 : -1);
           const col = mix(accent, accent2, t);
-          const alpha = (isDark ? 0.4 : 0.3) * (0.22 + a * 1.1 + drive * 0.25);
+          const alpha = (isDark ? 0.4 : 0.62) * (0.22 + a * 1.1 + drive * 0.25);
 
           ctx.beginPath();
           const steps = 48;
@@ -85,7 +87,7 @@ export const silk: Visualizer = {
         const cy = h / 2;
         const rad = Math.min(w, h) * (0.3 + f.bass * 0.14);
         const g = ctx.createRadialGradient(cx, cy, rad * 0.15, cx, cy, rad);
-        g.addColorStop(0, rgba(accent, (isDark ? 0.3 : 0.2) * (0.3 + f.level * 0.9)));
+        g.addColorStop(0, rgba(accent, (isDark ? 0.3 : 0.42) * (0.3 + f.level * 0.9)));
         g.addColorStop(1, rgba(accent, 0));
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);

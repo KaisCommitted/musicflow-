@@ -213,6 +213,7 @@ export function SongTable({
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "index", dir: 1 });
   const playQueue = usePlayer((s) => s.playQueue);
   const toggle = usePlayer((s) => s.toggle);
+  const setFullscreen = usePlayer((s) => s.setFullscreen);
   const openMenu = useSongMenu((s) => s.open);
   const current = usePlayer((s) => s.current());
   const isPlaying = usePlayer((s) => s.isPlaying);
@@ -335,7 +336,10 @@ export function SongTable({
                 // for mouse-only extension (see the index cell above).
                 if (e.ctrlKey || e.metaKey || e.shiftKey) toggleSelect(i, e.shiftKey);
               }}
-              onDoubleClick={() => playQueue(sorted, i, context)}
+              onDoubleClick={() => {
+                playQueue(sorted, i, context);
+                setFullscreen(true);
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 // Without this, the native event keeps bubbling to the window-level

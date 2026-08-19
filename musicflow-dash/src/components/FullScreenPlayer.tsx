@@ -169,7 +169,10 @@ export function FullScreenPlayer() {
           // too instead of leaving a dead strip of plain background behind it. The content
           // itself still leaves room there — see the pt-9 below — this is just the background
           // (art/visualizer/veil).
-          className="fixed inset-x-0 bottom-0 top-0 z-50 overflow-hidden"
+          // select-none: this view is meant to be double-clicked (toggles fullscreen, see
+          // onDoubleClick below), not to have its lyrics/text selected — without this, every
+          // double-click also highlighted whatever text sat under the cursor.
+          className="fixed inset-x-0 bottom-0 top-0 z-50 select-none overflow-hidden"
           onDoubleClick={toggleDocFullscreen}
         >
           {/* Fully opaque backstop — the blurred bed's blur can leave faint edge fringing, and

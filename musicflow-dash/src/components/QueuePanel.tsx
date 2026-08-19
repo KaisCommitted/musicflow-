@@ -105,53 +105,63 @@ export function QueuePanel() {
     <AnimatePresence>
       {queueOpen && (
         <motion.aside
-          initial={{ x: 360, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 360, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 320, damping: 34 }}
-          className="flex w-[340px] shrink-0 flex-col border-l border-border bg-card/60"
+          // Animating `width` itself (not just a transform) is what makes the main content
+          // next to this reflow smoothly instead of snapping — flexbox recalculates the
+          // sibling's size on every frame the width changes, so the song table resizes in
+          // lockstep instead of jumping the instant this mounts/unmounts. A duration-based
+          // tween instead of a spring avoids the width overshooting and bouncing, which read
+          // as janky rather than smooth on something this wide. The inner div below stays a
+          // fixed 340px so its content doesn't itself get squeezed during the animation —
+          // only the outer clipped box changes size.
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: 340, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ duration: 0.4, ease: "easeInOut" }}
+          className="flex shrink-0 overflow-hidden border-l border-border bg-card/60"
         >
-          <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">Queue</h2>
-              <p className="text-xs text-muted-foreground">
-                {context ? context.label : "Nothing playing"} · {queue.length} tracks
-              </p>
-            </div>
-            <button
-              onClick={() => setQueueOpen(false)}
-              aria-label="Close queue"
-              className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </header>
-          <div className="flex-1 overflow-y-auto p-2">
-            {queue.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">The queue is empty.</p>
-            ) : (
-              <DndContext
-                collisionDetection={closestCenter}
-                modifiers={[restrictToVerticalAxis]}
-                onDragEnd={onDragEnd}
+          <div className="flex w-[340px] shrink-0 flex-col">
+            <header className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold">Queue</h2>
+                <p className="text-xs text-muted-foreground">
+                  {context ? context.label : "Nothing playing"} · {queue.length} tracks
+                </p>
+              </div>
+              <button
+                onClick={() => setQueueOpen(false)}
+                aria-label="Close queue"
+                className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
               >
-                <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-                  <ul className="space-y-1">
-                    <AnimatePresence initial={false}>
-                      {queue.map((song, i) => (
-                        <QueueRow
-                          key={ids[i]}
-                          id={ids[i]!}
-                          song={song}
-                          index={i}
-                          isCurrent={i === index}
-                        />
-                      ))}
-                    </AnimatePresence>
-                  </ul>
-                </SortableContext>
-              </DndContext>
-            )}
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+            <div className="flex-1 overflow-y-auto p-2">
+              {queue.length === 0 ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">The queue is empty.</p>
+              ) : (
+                <DndContext
+                  collisionDetection={closestCenter}
+                  modifiers={[restrictToVerticalAxis]}
+                  onDragEnd={onDragEnd}
+                >
+                  <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+                    <ul className="space-y-1">
+                      <AnimatePresence initial={false}>
+                        {queue.map((song, i) => (
+                          <QueueRow
+                            key={ids[i]}
+                            id={ids[i]!}
+                            song={song}
+                            index={i}
+                            isCurrent={i === index}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </ul>
+                  </SortableContext>
+                </DndContext>
+              )}
+            </div>
           </div>
         </motion.aside>
       )}

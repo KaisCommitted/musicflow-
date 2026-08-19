@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import mimetypes
 import os
 import random
 import re
@@ -34,6 +35,16 @@ logging.basicConfig(
 log = logging.getLogger("musicflow")
 # Quiet down Flask/werkzeug request spam
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+# Python's mimetypes module consults the Windows registry (HKEY_CLASSES_ROOT\<ext>) before its
+# own built-in table — on some machines something has overwritten that key for .js to
+# text/plain, which made Chromium's strict module-script MIME check refuse to run our bundle
+# at all ("Failed to load module script ... MIME type of text/plain"), leaving a blank page (no
+# React tree ever mounts, so not even our own TitleBar renders). Force the correct types for
+# the two asset extensions our build actually ships, rather than trusting whatever a given
+# Windows install's registry says.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 
 app = Flask(__name__, static_folder="static")
 

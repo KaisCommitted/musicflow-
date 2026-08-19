@@ -163,15 +163,12 @@ export function FullScreenPlayer() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           transition={{ type: "spring", stiffness: 260, damping: 30 }}
-          // top-9 (not inset-0) so it starts below the Electron title bar (TitleBar.tsx, h-9)
-          // instead of covering it — same 36px whether or not that bar is actually rendered.
-          // In real fullscreen the title bar itself idle-fades (useFullscreenChrome), so this
-          // goes edge-to-edge there instead, or fading it out would leave a dead strip of plain
-          // background where the bar used to sit.
-          className={cn(
-            "fixed inset-x-0 bottom-0 z-50 overflow-hidden",
-            docFullscreen ? "top-0" : "top-9",
-          )}
+          // Always edge-to-edge (top-0) — the title bar (TitleBar.tsx, h-9) no longer paints its
+          // own background once this is open (see its `showBar`), so this covers that space
+          // too instead of leaving a dead strip of plain background behind it. The content
+          // itself still leaves room there — see the pt-9 below — this is just the background
+          // (art/visualizer/veil).
+          className="fixed inset-x-0 bottom-0 top-0 z-50 overflow-hidden"
         >
           {/* Fully opaque backstop — the blurred bed's blur can leave faint edge fringing, and
               the veil below is a partial-alpha gradient by design (it's meant to let colour
@@ -192,7 +189,7 @@ export function FullScreenPlayer() {
           <VisualizerStage featuresRef={featuresRef} styleId={styleId} />
           <div className="pointer-events-none absolute inset-0 bg-[image:var(--stage-veil)]" />
 
-          <div className="relative flex h-full flex-col">
+          <div className={cn("relative flex h-full flex-col", !docFullscreen && "pt-9")}>
             {/* Idle-reveals on mouse movement in the normal windowed view; in real fullscreen
                 it never reappears that way at all, only on actually exiting it (Escape) — see
                 showHeader above. Collapses its actual height (not just opacity) when hidden, so

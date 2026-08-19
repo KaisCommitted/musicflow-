@@ -14,6 +14,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Sparkles,
   Volume1,
   Volume2,
   VolumeX,
@@ -21,14 +22,17 @@ import {
 import { AlbumArt } from "@/components/AlbumArt";
 import { Waveform } from "@/components/Waveform";
 import { LikeButton } from "@/components/LikeButton";
+import { VisualizerStage } from "@/components/VisualizerStage";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { usePlayer } from "@/store/player";
 import { activeLyricIndex, useLyrics } from "@/hooks/useLyrics";
+import { useAudioFeatures } from "@/hooks/useAudioFeatures";
 import { formatTime } from "@/lib/format";
 import { gradientFromString } from "@/lib/colors";
 import { lyricsSourceLabel } from "@/lib/lyricsSources";
+import { VISUALIZERS, DEFAULT_VISUALIZER_ID } from "@/lib/visualizers";
 import { cn } from "@/lib/utils";
 
 export function FullScreenPlayer() {
@@ -64,6 +68,10 @@ export function FullScreenPlayer() {
   const [lyricsMode, setLyricsMode] = useState<"normal" | "big">("normal");
   const isBigMode = synced && lyricsMode === "big";
   const [docFullscreen, setDocFullscreen] = useState(false);
+  // Which full-screen background visualizer is active. Sticky for the session, not persisted —
+  // same convention as lyricsMode above.
+  const [styleId, setStyleId] = useState(DEFAULT_VISUALIZER_ID);
+  const featuresRef = useAudioFeatures(fullscreen);
 
   useEffect(() => {
     setLyricsSynced(synced);
@@ -129,7 +137,7 @@ export function FullScreenPlayer() {
           // instead of covering it — same 36px whether or not that bar is actually rendered.
           className="fixed inset-x-0 bottom-0 top-9 z-50 overflow-hidden"
         >
-          <div className="absolute inset-0 scale-110 blur-3xl brightness-[0.35] saturate-150">
+          <div className="absolute inset-0 scale-110 blur-3xl brightness-[var(--stage-bed-brightness)] saturate-150">
             {song.artwork ? (
               <img src={song.artwork} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -139,7 +147,8 @@ export function FullScreenPlayer() {
               />
             )}
           </div>
-          <div className="absolute inset-0 bg-background/90 backdrop-blur-2xl" />
+          <VisualizerStage featuresRef={featuresRef} styleId={styleId} />
+          <div className="pointer-events-none absolute inset-0 bg-[image:var(--stage-veil)]" />
 
           <div className="relative flex h-full flex-col">
             {/* Hidden in real (OS-level) fullscreen — an immersive view shouldn't still show its
@@ -462,6 +471,39 @@ export function FullScreenPlayer() {
                 </div>
               </div>
             </div>
+
+            {/* Hidden until hovered, same as the real-fullscreen chrome rule above — an
+                immersive view shouldn't have a permanent row of chips sitting on it. The
+                trigger is the only hoverable/clickable part until revealed; the wrapper and
+                (initially) the chip row itself pass clicks straight through to whatever's
+                behind them. */}
+            {!docFullscreen && (
+              <div className="group/style pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-3">
+                <div className="pointer-events-none flex origin-bottom scale-95 items-center gap-1 rounded-full bg-card/70 p-1.5 opacity-0 shadow-elevated backdrop-blur transition-all duration-200 group-hover/style:pointer-events-auto group-hover/style:scale-100 group-hover/style:opacity-100">
+                  {VISUALIZERS.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setStyleId(v.id)}
+                      title={v.description}
+                      className={cn(
+                        "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+                        styleId === v.id &&
+                          "bg-primary text-primary-foreground hover:text-primary-foreground",
+                      )}
+                    >
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  aria-label="Change visualizer style"
+                  title="Visualizer style"
+                  className="pointer-events-auto grid h-9 w-9 place-items-center rounded-full bg-card/60 text-muted-foreground backdrop-blur transition-colors hover:bg-card hover:text-foreground"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

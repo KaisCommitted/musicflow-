@@ -81,6 +81,11 @@
   --sidebar: oklch(0.13 0.006 60);
   --sidebar-foreground: oklch(0.9 0.005 80);
   --sidebar-border: oklch(0.26 0.008 60);
+
+  /* full-screen player: blurred-artwork bed brightness and the veil that sits over the
+     visualizer canvas, dimming it toward --background so the chrome on top stays legible. */
+  --stage-bed-brightness: 0.3;
+  --stage-veil: radial-gradient(115% 85% at 50% 45%, color-mix(in oklab, var(--background) 20%, transparent) 25%, color-mix(in oklab, var(--background) 72%, transparent) 100%);
 }
 
 .light {
@@ -106,6 +111,14 @@
   --sidebar: oklch(0.95 0.008 80);
   --sidebar-foreground: oklch(0.25 0.01 60);
   --sidebar-border: oklch(0.89 0.008 75);
+
+  --stage-bed-brightness: 0.45;
+  /* Needs to dim a lot harder than the dark-mode veil above: light foreground text (esp.
+     muted-foreground, used for the artist/album line, timestamps, lyrics) has much less
+     contrast headroom against a colourful bed than light text does against a dark one, so a
+     light veil this weak read as fine in a screenshot but made secondary text nearly
+     disappear in practice. */
+  --stage-veil: radial-gradient(115% 85% at 50% 45%, color-mix(in oklab, var(--background) 60%, transparent) 20%, color-mix(in oklab, var(--background) 92%, transparent) 100%);
 }
 
 @layer base {

@@ -4,12 +4,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowLeft,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   ExternalLink,
+  ListMusic,
   Loader2,
   LogIn,
   Pause,
@@ -27,6 +29,7 @@ import {
   getHistoryDetail,
   jobArtworkUrl,
   openYoutubeInBrowser,
+  resolveSpotifyPlaylists,
   retryHistoryItem,
   scanYoutubeCookieBrowsers,
   setupYoutubeCookies,
@@ -288,13 +291,18 @@ const PAGE_SIZE = 10;
 
 function DownloadPage() {
   const [tab, setTab] = useState<"download" | "history">("download");
+  const [inputMode, setInputMode] = useState<"songs" | "spotify">("songs");
   const [text, setText] = useState("");
+  const [spotifyText, setSpotifyText] = useState("");
+  const [spotifyResolving, setSpotifyResolving] = useState(false);
+  const [spotifyError, setSpotifyError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const {
     jobId,
     status,
     items,
     error,
+    spotifyPlaylistResults,
     start,
     pause,
     resume,
@@ -318,10 +326,47 @@ function DownloadPage() {
     .map((l) => l.trim())
     .filter(Boolean);
 
+  const spotifyUrls = spotifyText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
   const handleStart = async () => {
     setPage(0);
     await start(queries);
     setText("");
+  };
+
+  const handleSpotifyStart = async () => {
+    if (!spotifyUrls.length) return;
+    setSpotifyResolving(true);
+    setSpotifyError(null);
+    try {
+      const { playlists } = await resolveSpotifyPlaylists(spotifyUrls);
+      const ok = playlists.filter(
+        (p): p is typeof p & { name: string; queries: string[] } => !!p.queries?.length,
+      );
+      const failed = playlists.filter((p) => p.error);
+      if (!ok.length) {
+        setSpotifyError(
+          failed.map((f) => `${f.url} — ${f.error}`).join("\n") || "Couldn't read any of those playlists.",
+        );
+        return;
+      }
+      setPage(0);
+      await start(
+        ok.flatMap((p) => p.queries),
+        {
+          playlists: ok.map((p) => ({ name: p.name, queries: p.queries, ...(p.truncated ? { truncated: true } : {}) })),
+          resolveFailures: failed.map((f) => ({ name: f.url, error: f.error! })),
+        },
+      );
+      setSpotifyText("");
+    } catch (e) {
+      setSpotifyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSpotifyResolving(false);
+    }
   };
 
   const handlePlay = (itemIndex: number) => {
@@ -372,29 +417,81 @@ function DownloadPage() {
             >
               <h1 className="text-2xl font-bold">Download</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                One song per line — "Artist – Title" works best.
+                {inputMode === "songs"
+                  ? 'One song per line — "Artist – Title" works best.'
+                  : "One Spotify playlist link per line — every track gets searched and downloaded from YouTube."}
               </p>
-              <div className="mt-8 w-full max-w-2xl">
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  rows={12}
-                  placeholder={
-                    "Daft Punk – Digital Love\nTame Impala – Let It Happen\nArctic Monkeys – Do I Wanna Know?"
-                  }
-                  className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
-                />
-                <div className="mt-4 flex justify-center">
-                  <button
-                    onClick={handleStart}
-                    disabled={!queries.length}
-                    className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
-                  >
-                    <Play className="h-4 w-4" /> Start Download{" "}
-                    {queries.length ? `(${queries.length})` : ""}
-                  </button>
-                </div>
-                {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
+
+              <Tabs
+                value={inputMode}
+                onValueChange={(v) => setInputMode(v as "songs" | "spotify")}
+                className="mt-6"
+              >
+                <TabsList>
+                  <TabsTrigger value="songs">Songs</TabsTrigger>
+                  <TabsTrigger value="spotify">Spotify playlist</TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <div className="mt-4 w-full max-w-2xl">
+                {inputMode === "songs" ? (
+                  <>
+                    <textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      rows={12}
+                      placeholder={
+                        "Daft Punk – Digital Love\nTame Impala – Let It Happen\nArctic Monkeys – Do I Wanna Know?"
+                      }
+                      className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
+                    />
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        onClick={handleStart}
+                        disabled={!queries.length}
+                        className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+                      >
+                        <Play className="h-4 w-4" /> Start Download{" "}
+                        {queries.length ? `(${queries.length})` : ""}
+                      </button>
+                    </div>
+                    {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
+                  </>
+                ) : (
+                  <>
+                    <textarea
+                      value={spotifyText}
+                      onChange={(e) => setSpotifyText(e.target.value)}
+                      rows={12}
+                      placeholder={
+                        "https://open.spotify.com/playlist/...\nhttps://open.spotify.com/playlist/..."
+                      }
+                      className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
+                    />
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        onClick={() => void handleSpotifyStart()}
+                        disabled={!spotifyUrls.length || spotifyResolving}
+                        className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+                      >
+                        {spotifyResolving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                        {spotifyResolving
+                          ? "Reading playlist…"
+                          : `Import & Download${spotifyUrls.length ? ` (${spotifyUrls.length})` : ""}`}
+                      </button>
+                    </div>
+                    {spotifyError && (
+                      <p className="mt-3 whitespace-pre-line text-center text-xs text-destructive">
+                        {spotifyError}
+                      </p>
+                    )}
+                    {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
+                  </>
+                )}
               </div>
             </motion.div>
           )}
@@ -503,6 +600,32 @@ function DownloadPage() {
                   </>
                 )}
               </div>
+
+              {/* Spotify playlist import results */}
+              {spotifyPlaylistResults && spotifyPlaylistResults.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {spotifyPlaylistResults.map((r, i) => (
+                    <div
+                      key={`${r.name}-${i}`}
+                      className="surface flex items-center gap-3 px-4 py-3 text-sm"
+                    >
+                      {r.ok ? (
+                        <Check className="h-4 w-4 shrink-0 text-success" />
+                      ) : (
+                        <X className="h-4 w-4 shrink-0 text-destructive" />
+                      )}
+                      <ListMusic className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate">{r.name}</p>
+                        {r.note && <p className="truncate text-xs text-warning">{r.note}</p>}
+                      </div>
+                      <span className={cn("text-xs", r.ok ? "text-muted-foreground" : "text-destructive")}>
+                        {r.ok ? `${r.count} song${r.count === 1 ? "" : "s"}` : r.error}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Song list */}
               {pageItems.length > 0 && (

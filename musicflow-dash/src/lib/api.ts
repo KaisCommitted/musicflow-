@@ -37,6 +37,8 @@ export interface DownloadItem {
   status: DownloadStatus;
   progress?: number;
   error?: string;
+  /** Real library-relative file path — set once status is "done" or "skipped". */
+  path?: string | null;
 }
 
 export interface JobStatus {
@@ -110,6 +112,27 @@ export const startDownload = (queries: string[]) =>
   req<{ job_id: string }>("/api/start", {
     method: "POST",
     body: JSON.stringify({ queries }),
+  });
+
+export interface SpotifyResolvedPlaylist {
+  url: string;
+  /** Present when this link resolved successfully. */
+  name?: string;
+  /** "Artist - Title" queries, one per track — feed straight into startDownload(). */
+  queries?: string[];
+  /** Present when this link failed to resolve. */
+  error?: string;
+  /** True when the playlist likely has more tracks than were returned — Spotify's
+   * public embed page (used to read playlists with no login) caps out at 100. */
+  truncated?: boolean;
+}
+
+/** Reads one or more Spotify playlist links and returns each as a track-query list.
+ * Doesn't start a download itself — pass the combined queries to startDownload(). */
+export const resolveSpotifyPlaylists = (urls: string[]) =>
+  req<{ playlists: SpotifyResolvedPlaylist[] }>("/api/spotify/resolve", {
+    method: "POST",
+    body: JSON.stringify({ urls }),
   });
 
 export const getJobStatus = (jobId: string) => req<JobStatus>(`/api/status/${jobId}`);

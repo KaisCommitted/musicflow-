@@ -21,6 +21,7 @@ import db
 import discord_rpc
 import scrobbling
 import lastfm
+import spotify_client
 
 import yt_dlp
 
@@ -546,6 +547,43 @@ def start_job():
     return jsonify({"job_id": job_id})
 
 
+@app.route("/api/spotify/resolve", methods=["POST"])
+def resolve_spotify_playlists():
+    """Reads one or more Spotify playlist links and turns each into a track list
+    (artist + title only — no audio touches this app from Spotify). The caller feeds
+    the resulting queries into /api/start same as any hand-typed song list."""
+    data = request.get_json()
+    urls = [u.strip() for u in data.get("urls", []) if u.strip()]
+    if not urls:
+        return jsonify({"error": "No playlist links provided"}), 400
+
+    results = []
+    for url in urls:
+        playlist_id = spotify_client.extract_playlist_id(url)
+        if not playlist_id:
+            results.append({"url": url, "error": "Not a recognizable Spotify playlist link"})
+            continue
+        try:
+            name, tracks, truncated = spotify_client.get_playlist_tracks(playlist_id)
+        except RuntimeError as e:
+            results.append({"url": url, "error": str(e)})
+            continue
+        except Exception as e:
+            log.error("[spotify] Failed to resolve %s: %s", url, e)
+            results.append({"url": url, "error": "Something went wrong reading that playlist"})
+            continue
+        if not tracks:
+            results.append({"url": url, "error": "That playlist has no tracks"})
+            continue
+        queries = [f"{t['artist']} - {t['title']}" if t["artist"] else t["title"] for t in tracks]
+        entry = {"url": url, "name": name, "queries": queries}
+        if truncated:
+            entry["truncated"] = True
+        results.append(entry)
+
+    return jsonify({"playlists": results})
+
+
 @app.route("/api/status/<job_id>")
 def job_status(job_id: str):
     job = jobs.get(job_id)
@@ -589,6 +627,7 @@ def job_status(job_id: str):
             "progress": (i.get("progress") or 0) / 100,
             "error": i.get("error") if i["status"] in ("error", "cancelled") else None,
             "link": i.get("link"),
+            "path": i.get("file") if i["status"] in ("done", "skipped") else None,
             "_completed_at": i.get("completed_at", 0),
         })
     # Sort: active downloads first, then completed by most recent

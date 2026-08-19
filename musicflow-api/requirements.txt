@@ -6,3 +6,4 @@ mutagen
 syncedlyrics
 pypresence
 Pillow
+certifi

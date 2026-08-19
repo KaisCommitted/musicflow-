@@ -72,6 +72,19 @@ export function FullScreenPlayer() {
   // same convention as lyricsMode above.
   const [styleId, setStyleId] = useState(DEFAULT_VISUALIZER_ID);
   const featuresRef = useAudioFeatures(fullscreen);
+  // The style switcher is otherwise hover-only — this keeps it visible for a while after an
+  // actual interaction (picking a style, or opening it by clicking the trigger) so it doesn't
+  // vanish the instant the pointer drifts off, then falls back to pure hover.
+  const [switcherPinned, setSwitcherPinned] = useState(false);
+  const switcherPinTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinSwitcher = () => {
+    setSwitcherPinned(true);
+    if (switcherPinTimeout.current) clearTimeout(switcherPinTimeout.current);
+    switcherPinTimeout.current = setTimeout(() => setSwitcherPinned(false), 20_000);
+  };
+  useEffect(() => () => {
+    if (switcherPinTimeout.current) clearTimeout(switcherPinTimeout.current);
+  }, []);
 
   useEffect(() => {
     setLyricsSynced(synced);
@@ -476,14 +489,26 @@ export function FullScreenPlayer() {
                 immersive view shouldn't have a permanent row of chips sitting on it. The
                 trigger is the only hoverable/clickable part until revealed; the wrapper and
                 (initially) the chip row itself pass clicks straight through to whatever's
-                behind them. */}
+                behind them. Clicking the trigger or a style pins it open for 20s (switcherPinned)
+                so it doesn't vanish mid-decision the moment the pointer drifts off — after that
+                it drops back to pure hover. */}
             {!docFullscreen && (
               <div className="group/style pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-3">
-                <div className="pointer-events-none flex origin-bottom scale-95 items-center gap-1 rounded-full bg-card/70 p-1.5 opacity-0 shadow-elevated backdrop-blur transition-all duration-200 group-hover/style:pointer-events-auto group-hover/style:scale-100 group-hover/style:opacity-100">
+                <div
+                  className={cn(
+                    "pointer-events-none flex origin-bottom items-center gap-1 rounded-full bg-card/70 p-1.5 shadow-elevated backdrop-blur transition-all duration-200 group-hover/style:pointer-events-auto group-hover/style:scale-100 group-hover/style:opacity-100",
+                    switcherPinned
+                      ? "pointer-events-auto scale-100 opacity-100"
+                      : "scale-95 opacity-0",
+                  )}
+                >
                   {VISUALIZERS.map((v) => (
                     <button
                       key={v.id}
-                      onClick={() => setStyleId(v.id)}
+                      onClick={() => {
+                        setStyleId(v.id);
+                        pinSwitcher();
+                      }}
                       title={v.description}
                       className={cn(
                         "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
@@ -496,6 +521,7 @@ export function FullScreenPlayer() {
                   ))}
                 </div>
                 <button
+                  onClick={pinSwitcher}
                   aria-label="Change visualizer style"
                   title="Visualizer style"
                   className="pointer-events-auto grid h-9 w-9 place-items-center rounded-full bg-card/60 text-muted-foreground backdrop-blur transition-colors hover:bg-card hover:text-foreground"

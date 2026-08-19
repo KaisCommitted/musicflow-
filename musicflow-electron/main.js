@@ -11,6 +11,15 @@ const { spawn, execSync } = require("child_process");
 // the Python backend already keeps its own db/log (see musicflow-api/db.py).
 app.setName("Musicflow");
 
+// Frameless windows (frame: false + backgroundColor below, since TitleBar.tsx draws our own
+// chrome) are the textbook trigger for a well-documented Electron/Chromium bug: on some
+// machines (Intel integrated graphics, remote desktop sessions, VMs, or after a GPU driver
+// hiccup) the GPU compositor fails silently and the window paints solid black forever — not
+// even the hand-drawn titlebar shows, since there's no native chrome to fall back to. Must be
+// called before app.whenReady(). Costs a little smoothness on the blur/visualizer effects, but
+// a window that reliably shows something beats one that sometimes doesn't.
+app.disableHardwareAcceleration();
+
 let backendProcess = null;
 let mainWindow = null;
 let backendPort = null;
@@ -207,6 +216,13 @@ function createWindow() {
 
   mainWindow.loadURL(`http://127.0.0.1:${backendPort}`);
 
+  // Silent GPU/renderer death (see disableHardwareAcceleration above) is exactly what a black,
+  // unresponsive window looks like from the outside with nothing in the log to explain it —
+  // this at least gets the reason on record if it ever happens again.
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    log("Renderer process gone:", details.reason, "exitCode", details.exitCode);
+  });
+
   // Settings has outbound links (Discord dev portal, Last.fm auth, ListenBrainz) — those
   // should open in the system browser, not navigate this window away from the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -320,6 +336,10 @@ if (!gotLock) {
       );
       app.quit();
     }
+  });
+
+  app.on("child-process-gone", (_event, details) => {
+    log("Child process gone:", details.type, details.reason, "exitCode", details.exitCode);
   });
 
   app.on("activate", () => {

@@ -194,43 +194,52 @@ export function FullScreenPlayer() {
 
           <div className="relative flex h-full flex-col">
             {/* Idle-reveals on mouse movement in the normal windowed view; in real fullscreen
-                it never reappears that way at all, only on actually exiting it (Escape) —
-                see showHeader above. Stays mounted (not conditionally rendered) purely so the
-                opacity change fades instead of popping. */}
-            <div
-              className={cn(
-                "flex items-center justify-between px-6 py-5 transition-opacity duration-300",
-                showHeader ? "opacity-100" : "pointer-events-none opacity-0",
+                it never reappears that way at all, only on actually exiting it (Escape) — see
+                showHeader above. Collapses its actual height (not just opacity) when hidden, so
+                the grid below reflows to fill the reclaimed space instead of leaving a blank
+                gap — flex-1 on that grid does the rest once this row is actually gone. */}
+            <AnimatePresence initial={false}>
+              {showHeader && (
+                <motion.div
+                  key="header"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                  className="overflow-hidden"
+                >
+                  <div className="flex items-center justify-between px-6 py-5">
+                    <motion.button
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.9, y: 2 }}
+                      onClick={() => setFullscreen(false)}
+                      aria-label="Minimize player"
+                      className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+                    >
+                      <ChevronDown className="h-5 w-5" />
+                    </motion.button>
+                    <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                      Now Playing
+                    </p>
+                    <motion.button
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.9, y: 2 }}
+                      onClick={toggleDocFullscreen}
+                      aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
+                      className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
+                    >
+                      <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
+                        {docFullscreen ? (
+                          <Minimize className="h-5 w-5" />
+                        ) : (
+                          <Maximize className="h-5 w-5" />
+                        )}
+                      </IconSwap>
+                    </motion.button>
+                  </div>
+                </motion.div>
               )}
-            >
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.9, y: 2 }}
-                onClick={() => setFullscreen(false)}
-                aria-label="Minimize player"
-                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
-              >
-                <ChevronDown className="h-5 w-5" />
-              </motion.button>
-              <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                Now Playing
-              </p>
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.9, y: 2 }}
-                onClick={toggleDocFullscreen}
-                aria-label={docFullscreen ? "Exit full screen" : "Enter full screen"}
-                className="grid h-10 w-10 place-items-center rounded-xl bg-card/60 text-foreground backdrop-blur transition-colors hover:bg-card"
-              >
-                <IconSwap id={docFullscreen ? "exit-fs" : "enter-fs"}>
-                  {docFullscreen ? (
-                    <Minimize className="h-5 w-5" />
-                  ) : (
-                    <Maximize className="h-5 w-5" />
-                  )}
-                </IconSwap>
-              </motion.button>
-            </div>
+            </AnimatePresence>
 
             <div className="grid flex-1 grid-cols-2 gap-10 overflow-hidden px-14 pb-10">
               <div className="flex flex-col items-center justify-center gap-8">

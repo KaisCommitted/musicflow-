@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 /**
  * Tracks real (OS-level) fullscreen state, and — when `trackMouseIdle` is on — whether the
- * mouse has gone idle (no movement for 1s). Callers combine `docFullscreen`/`mouseIdle`
+ * mouse has gone idle (no movement for 5s). Callers combine `docFullscreen`/`mouseIdle`
  * themselves into whatever visibility rule fits: the title bar only ever cares about
  * `docFullscreen` (never shows in real fullscreen, otherwise always on — it's independent of
  * whether the full-screen player is even open); the full-screen player's own header idle-
@@ -31,7 +31,7 @@ export function useFullscreenChrome(trackMouseIdle = false) {
     let timeout: ReturnType<typeof setTimeout>;
     const arm = () => {
       clearTimeout(timeout);
-      timeout = setTimeout(() => setMouseIdle(true), 1000);
+      timeout = setTimeout(() => setMouseIdle(true), 5000);
     };
     const onMove = () => {
       setMouseIdle(false);

@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("musicflow", {
   minimizeWindow: () => ipcRenderer.send("window:minimize"),
   toggleMaximizeWindow: () => ipcRenderer.send("window:toggle-maximize"),
   closeWindow: () => ipcRenderer.send("window:close"),
+  // A real quit (window + backend), unlike closeWindow which just hides to the tray.
+  quitApp: () => ipcRenderer.send("window:quit"),
   isWindowMaximized: () => ipcRenderer.invoke("window:is-maximized"),
   onWindowMaximizedChange: (callback) => {
     const listener = (_event, maximized) => callback(maximized);

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Copy, Minus, Square, X } from "lucide-react";
+import { Copy, Minus, Power, Square, X } from "lucide-react";
 import {
   closeWindow,
   isElectron,
   isWindowMaximized,
   minimizeWindow,
   onWindowMaximizedChange,
+  quitApp,
   toggleMaximizeWindow,
 } from "@/lib/electronBridge";
 import { useFullscreenChrome } from "@/hooks/useFullscreenChrome";
@@ -40,6 +41,18 @@ export function TitleBar() {
         docFullscreen ? "pointer-events-none opacity-0" : "opacity-100",
       )}
     >
+      {/* "End task" — a real quit (window + backend process), unlike Close below which just
+          hides to the tray and keeps playback/the backend running. Separated with a gap (not
+          grouped with minimize/maximize/close) and its own tooltip specifically so it doesn't
+          get mistaken for the regular close button — this one isn't undoable via the tray. */}
+      <button
+        onClick={quitApp}
+        aria-label="End task (quit Musicflow completely, including the background process)"
+        title="End task — quits completely, even from the background"
+        className="no-drag mr-2 grid h-9 w-11 place-items-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+      >
+        <Power className="h-4 w-4" />
+      </button>
       <button
         onClick={minimizeWindow}
         aria-label="Minimize"

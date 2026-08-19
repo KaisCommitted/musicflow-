@@ -15,6 +15,7 @@ declare global {
       minimizeWindow: () => void;
       toggleMaximizeWindow: () => void;
       closeWindow: () => void;
+      quitApp: () => void;
       isWindowMaximized: () => Promise<boolean>;
       onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void;
     };
@@ -37,6 +38,10 @@ export const onGlobalShortcut = (callback: (actionId: string) => void): (() => v
 export const minimizeWindow = () => window.musicflow?.minimizeWindow();
 export const toggleMaximizeWindow = () => window.musicflow?.toggleMaximizeWindow();
 export const closeWindow = () => window.musicflow?.closeWindow();
+/** A real quit (window + backend both terminate), unlike closeWindow which just hides to the
+ * tray — the app keeps running in the background until this (or the tray's own "Quit") is
+ * used. */
+export const quitApp = () => window.musicflow?.quitApp();
 export const isWindowMaximized = () => window.musicflow?.isWindowMaximized() ?? Promise.resolve(false);
 export const onWindowMaximizedChange = (callback: (maximized: boolean) => void): (() => void) => {
   return window.musicflow?.onWindowMaximizedChange(callback) ?? (() => {});

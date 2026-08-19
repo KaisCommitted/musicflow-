@@ -275,6 +275,14 @@ ipcMain.on("window:toggle-maximize", () => {
 });
 ipcMain.on("window:close", () => mainWindow?.close());
 ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+// TitleBar.tsx's "end task" button — unlike window:close (which just hides to the tray, see
+// the close handler above), this is a real quit: same path as the tray's own "Quit" item, so
+// it still goes through before-quit/will-quit (killBackend, unregistering shortcuts, ...)
+// rather than skipping cleanup and risking an orphaned backend process.
+ipcMain.on("window:quit", () => {
+  isQuitting = true;
+  app.quit();
+});
 
 // This is silent by design everywhere else Electron apps do it, but that silence cost real
 // debugging time once already (a leftover process from a previous run/crash holding the lock

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Music2 } from "lucide-react";
 import { ARTWORK_SIZES, withArtworkSize, type Song } from "@/lib/api";
 import { gradientFromString } from "@/lib/colors";
@@ -22,7 +22,16 @@ export function AlbumArt({
   // song (the player bar/full-screen art), so every real image fades in rather than
   // popping in the instant it's decoded.
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => setLoaded(false), [song?.artwork]);
+  const imgRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    setLoaded(false);
+    // A browser-cached image (e.g. skipping back to a song shown a moment ago) can finish
+    // loading before this effect's onLoad listener is even attached — the "load" event only
+    // fires once, so a missed one left the art stuck at opacity-0 until something else (like
+    // closing and reopening the full-screen player) forced a fresh element. `complete` is a
+    // live property of the element itself, not an event, so it can't be missed the same way.
+    if (imgRef.current?.complete) setLoaded(true);
+  }, [song?.artwork]);
 
   if (!song) {
     return (
@@ -34,9 +43,14 @@ export function AlbumArt({
   if (song.artwork) {
     return (
       <img
+        ref={imgRef}
         src={withArtworkSize(song.artwork, ARTWORK_SIZES[size])}
         alt={`${song.album || song.title} cover art`}
-        loading="lazy"
+        // "large" is only ever the single hero image the user is looking straight at (album
+        // art headers, the full-screen/now-playing view) — never off-screen, so lazy-loading
+        // it only adds a heuristic-timing risk with no benefit. Row/grid thumbnails still lazy
+        // load, which is what actually matters for a long virtualized list.
+        loading={size === "large" ? "eager" : "lazy"}
         onLoad={() => setLoaded(true)}
         className={cn(
           "object-cover opacity-0 transition-opacity duration-300",

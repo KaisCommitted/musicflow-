@@ -1,9 +1,9 @@
 name: Release
 
-# Push a tag like v1.2.3 to build the Windows installer and publish it as a GitHub Release.
-# Auto-update inside the app is intentionally not wired up yet — this just automates getting
-# a properly-versioned installer onto Releases, since electron-builder needs GH_TOKEN either
-# way and it's the same handful of steps as building locally.
+# Push a tag like v1.2.3 to build the Windows and macOS installers and publish them as a
+# GitHub Release. Auto-update inside the app is intentionally not wired up yet — this just
+# automates getting properly-versioned installers onto Releases, since electron-builder needs
+# GH_TOKEN either way and it's the same handful of steps as building locally.
 on:
   push:
     tags:
@@ -14,7 +14,25 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  # Split out so the two platform jobs (which run in parallel) both upload to one release
+  # instead of racing to create it themselves — see the comment this used to carry inline.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # electron-builder publishes several artifacts (installer, .blockmap, latest.yml) as
+      # near-simultaneous uploads. If the release doesn't exist yet, each upload independently
+      # tries to create it — that race has, in practice, created two separate draft releases
+      # for the same tag instead of one, splitting the assets between them. Pre-creating an
+      # empty draft here means every upload finds it already exists and just attaches to it.
+      - name: Pre-create the GitHub release (avoids a create-race across artifact uploads)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" --draft --title "${{ github.ref_name }}" --notes ""
+
+  build-windows:
+    needs: create-release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,24 +123,153 @@ jobs:
         working-directory: musicflow-electron
         run: npm ci
 
-      # electron-builder publishes several artifacts (installer, .blockmap, latest.yml) as
-      # near-simultaneous uploads. If the release doesn't exist yet, each upload independently
-      # tries to create it — that race has, in practice, created two separate draft releases
-      # for the same tag instead of one, splitting the assets between them. Pre-creating an
-      # empty draft here means every upload finds it already exists and just attaches to it.
-      - name: Pre-create the GitHub release (avoids a create-race across artifact uploads)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ github.ref_name }}" --draft --title "${{ github.ref_name }}" --notes ""
-
       - name: Build and publish installer
         working-directory: musicflow-electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win --publish always
 
-      # electron-builder uploads to the release created above but leaves it in draft — publish
-      # it so it actually shows up on /releases/latest (what the README's download link uses).
+  build-mac:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-13 is GitHub's last Intel (x64) runner image; macos-14 is Apple Silicon
+          # (arm64). PyInstaller freezes a native binary for whatever machine runs it — it
+          # can't cross-compile — so each arch needs its own real runner rather than one job
+          # building both.
+          - runner: macos-13
+            arch: x64
+            deno_target: x86_64-apple-darwin
+            node_arch: x64
+          - runner: macos-14
+            arch: arm64
+            deno_target: aarch64-apple-darwin
+            node_arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Build frontend
+        working-directory: musicflow-dash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install backend dependencies
+        working-directory: musicflow-api
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt pyinstaller
+
+      # evermeet.cx ships universal (x64 + arm64) static ffmpeg/ffprobe builds for macOS, so
+      # both matrix legs fetch the same binary — unlike Deno/Node below there's no per-arch
+      # variant to pick. A plain Homebrew install isn't an option here: it's dynamically linked
+      # against Homebrew's own paths and won't run on a machine that doesn't have the exact same
+      # libraries installed at those paths.
+      - name: Fetch ffmpeg (bundled with the backend for downloads)
+        run: |
+          mkdir -p musicflow-api/bin
+          curl -L -o ffmpeg.zip "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
+          curl -L -o ffprobe.zip "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip"
+          unzip -o ffmpeg.zip -d ffmpeg-extracted
+          unzip -o ffprobe.zip -d ffprobe-extracted
+          cp ffmpeg-extracted/ffmpeg musicflow-api/bin/ffmpeg
+          cp ffprobe-extracted/ffprobe musicflow-api/bin/ffprobe
+          chmod +x musicflow-api/bin/ffmpeg musicflow-api/bin/ffprobe
+
+      # yt-dlp needs a JS runtime to solve YouTube's JS challenge for its best audio formats —
+      # without one, downloads 403 even though extraction/search still works fine.
+      - name: Fetch Deno (JS runtime yt-dlp needs for YouTube's challenge-solving)
+        run: |
+          curl -L -o deno.zip "https://github.com/denoland/deno/releases/latest/download/deno-${{ matrix.deno_target }}.zip"
+          unzip -o deno.zip -d musicflow-api/bin
+          chmod +x musicflow-api/bin/deno
+
+      # Bundled so anonymous downloads (no YouTube login connected) can still get a PO token —
+      # see find_node()/find_pot_server() in main.py. Portable node binary only (no install),
+      # same bundling shape as ffmpeg/deno above.
+      - name: Fetch Node.js (bundled for the PO token provider)
+        run: |
+          NODE_VERSION=$(curl -s https://nodejs.org/dist/index.json | jq -r '[.[] | select(.version | startswith("v24."))][0].version')
+          curl -L -o node.tar.gz "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-${{ matrix.node_arch }}.tar.gz"
+          tar -xzf node.tar.gz
+          cp "node-${NODE_VERSION}-darwin-${{ matrix.node_arch }}/bin/node" musicflow-api/bin/node
+          chmod +x musicflow-api/bin/node
+
+      # Same source/steps as the Windows job — native deps in node_modules build correctly for
+      # whichever arch this runner actually is, automatically.
+      - name: Build PO token provider server
+        run: |
+          git clone --single-branch --branch master https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git bgutil-src
+          cd bgutil-src/server
+          npm ci
+          npx tsc
+          npm prune --omit=dev
+          cd ../..
+          mkdir -p musicflow-api/bin/bgutil-server
+          cp -R bgutil-src/server/build musicflow-api/bin/bgutil-server/build
+          cp -R bgutil-src/server/node_modules musicflow-api/bin/bgutil-server/node_modules
+          cp bgutil-src/server/package.json musicflow-api/bin/bgutil-server/package.json
+
+      - name: Freeze backend with PyInstaller
+        working-directory: musicflow-api
+        run: python3 -m PyInstaller musicflow-backend.spec --noconfirm
+
+      # No .icns (or mac-sized .png) is checked in — generated here from the single source SVG
+      # so there's nothing binary to keep in sync by hand. iconutil (icns builder) only exists
+      # on macOS, which is exactly where this job runs anyway.
+      - name: Generate mac app icon
+        run: |
+          brew install librsvg
+          rsvg-convert -w 1024 -h 1024 musicflow-dash/public/brand/musicflow-mark-transparent.svg -o musicflow-electron/build/icon.png
+          mkdir icon.iconset
+          sips -z 16 16   musicflow-electron/build/icon.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32   musicflow-electron/build/icon.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32   musicflow-electron/build/icon.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64   musicflow-electron/build/icon.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 musicflow-electron/build/icon.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256 musicflow-electron/build/icon.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 musicflow-electron/build/icon.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512 musicflow-electron/build/icon.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 musicflow-electron/build/icon.png --out icon.iconset/icon_512x512.png
+          cp musicflow-electron/build/icon.png icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o musicflow-electron/build/icon.icns
+
+      - name: Set package version from tag
+        working-directory: musicflow-electron
+        run: npm pkg set version="${GITHUB_REF_NAME#v}"
+
+      - name: Install Electron dependencies
+        working-directory: musicflow-electron
+        run: npm ci
+
+      # Explicit --${arch} (not bare --mac) so this leg only packages its own native backend
+      # build instead of also cross-building (and publishing) the other arch's Electron shell
+      # paired with a backend it doesn't match.
+      - name: Build and publish installer
+        working-directory: musicflow-electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish always
+
+  # electron-builder uploads to the release created above but leaves it in draft — publish it
+  # so it actually shows up on /releases/latest (what the README's download link uses).
+  finalize-release:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

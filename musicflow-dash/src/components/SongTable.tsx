@@ -351,6 +351,8 @@ export function SongTable({
                   contextSongs: sorted,
                   contextLabel: context.label,
                   playlistName,
+                  selected: selected.has(song.path),
+                  onToggleSelect: () => toggleSelect(i, false),
                   x: e.clientX,
                   y: e.clientY,
                 });

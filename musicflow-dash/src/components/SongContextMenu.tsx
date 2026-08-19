@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Disc3, ListEnd, ListPlus, Play, Plus, Trash2, User } from "lucide-react";
+import {
+  Check,
+  CheckSquare,
+  Disc3,
+  ListEnd,
+  ListPlus,
+  Play,
+  Plus,
+  Square,
+  Trash2,
+  User,
+} from "lucide-react";
 import { useSongMenu } from "@/store/menu";
 import { usePlayer } from "@/store/player";
 import { useLibrary } from "@/store/library";
@@ -34,7 +45,8 @@ function Item({
 }
 
 export function SongContextMenu() {
-  const { song, contextSongs, contextLabel, playlistName, x, y, close } = useSongMenu();
+  const { song, contextSongs, contextLabel, playlistName, selected, onToggleSelect, x, y, close } =
+    useSongMenu();
   // Individually selected — this component is always mounted, and playQueue/playNext/addToQueue
   // are stable function references, so selecting them (instead of destructuring the whole
   // store) means this menu never re-renders from unrelated player state like the currentTime
@@ -88,6 +100,23 @@ export function SongContextMenu() {
           <p className="truncate px-2.5 py-1 text-[11px] uppercase tracking-widest text-muted-foreground">
             {song.title}
           </p>
+          <Item
+            icon={
+              selected ? (
+                <CheckSquare className="h-4 w-4 text-primary" />
+              ) : (
+                <Square className="h-4 w-4" />
+              )
+            }
+            label={selected ? "Deselect" : "Select"}
+            onClick={() => {
+              onToggleSelect();
+              close();
+            }}
+          />
+
+          <div className="my-1 h-px bg-border" />
+
           <Item
             icon={<Play className="h-4 w-4" />}
             label="Play Now"

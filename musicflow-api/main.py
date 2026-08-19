@@ -19,8 +19,8 @@ log = logging.getLogger("musicflow")
 
 # Browsers yt-dlp knows how to read cookies from — kept here (not just inline in server.py)
 # so the frontend's dropdown and the backend's validation always agree on what's offered.
-# yt-dlp also supports safari and whale, but Safari hasn't shipped on Windows in over a
-# decade (Musicflow is Windows-only) and Whale (Naver, Korea-only) is niche enough that a
+# yt-dlp also supports safari and whale, but Safari isn't in the icon set this list drives
+# (musicflow-dash/public/browser-icons/) and Whale (Naver, Korea-only) is niche enough that a
 # clean icon for it doesn't exist anywhere reasonable to source — not worth listing either.
 SUPPORTED_COOKIE_BROWSERS = ["chrome", "firefox", "edge", "brave", "opera", "vivaldi", "chromium"]
 
@@ -148,45 +148,68 @@ _BROWSER_EXE_NAMES = {
     "chromium": "chrome.exe",  # official Chromium builds still ship as chrome.exe
 }
 
+# macOS equivalents of _BROWSER_EXE_NAMES — the .app bundle name, which doubles as both the
+# `open -a` target and the running process name (Chromium-based browsers on mac name their main
+# process after the app itself).
+_BROWSER_APP_NAMES_MAC = {
+    "chrome": "Google Chrome",
+    "firefox": "firefox",
+    "edge": "Microsoft Edge",
+    "brave": "Brave Browser",
+    "opera": "Opera",
+    "vivaldi": "Vivaldi",
+    "chromium": "Chromium",
+}
+
 # Only the browsers that can actually produce a "locked" classification need an entry here —
 # Firefox doesn't lock its cookie database the same way Chromium does, so it never hits that
 # failure and this mapping is never consulted for it.
 _BROWSER_PROCESS_NAMES = {b: exe for b, exe in _BROWSER_EXE_NAMES.items() if b != "firefox"}
+_BROWSER_PROCESS_NAMES_MAC = {b: name for b, name in _BROWSER_APP_NAMES_MAC.items() if b != "firefox"}
 
 
-def _processes_running(exe: str) -> bool:
-    check = subprocess.run(
-        ["tasklist", "/FI", f"IMAGENAME eq {exe}"],
-        capture_output=True, text=True,
-    )
-    return exe.lower() in check.stdout.lower()
+def _processes_running(name: str) -> bool:
+    if sys.platform == "win32":
+        check = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {name}"],
+            capture_output=True, text=True,
+        )
+        return name.lower() in check.stdout.lower()
+    check = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True)
+    return check.returncode == 0
 
 
 def _close_browser_and_wait(browser: str, timeout: float = 6.0) -> bool:
     """Closes every running process for this browser and waits for them to actually exit, so
     the export attempt right after has a real shot at an unlocked cookie file. Graceful first —
-    a plain taskkill sends WM_CLOSE, giving any real open window (and anything it might be
+    a plain taskkill/pkill asks nicely, giving any real open window (and anything it might be
     asking the user, like an unsaved-changes prompt) a chance to close on its own terms — and
     only escalates to a force-kill for whatever's left after a couple of seconds, which in
     practice is the windowless background processes browsers keep alive after their last
     visible window closes (GPU/renderer/keep-alive helpers), not real interactive state.
     Best-effort and safe to call on an already-closed browser — it's just a no-op then. Returns
     whether the browser is confirmed gone."""
-    exe = _BROWSER_PROCESS_NAMES.get(browser)
-    if not exe or not _processes_running(exe):
+    name = (_BROWSER_PROCESS_NAMES if sys.platform == "win32" else _BROWSER_PROCESS_NAMES_MAC).get(browser)
+    if not name or not _processes_running(name):
         return True
 
-    subprocess.run(["taskkill", "/IM", exe, "/T"], capture_output=True, text=True)
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/IM", name, "/T"], capture_output=True, text=True)
+    else:
+        subprocess.run(["pkill", "-x", name], capture_output=True, text=True)
     graceful_deadline = time.monotonic() + min(2.0, timeout)
-    while time.monotonic() < graceful_deadline and _processes_running(exe):
+    while time.monotonic() < graceful_deadline and _processes_running(name):
         time.sleep(0.3)
 
-    if _processes_running(exe):
-        subprocess.run(["taskkill", "/IM", exe, "/T", "/F"], capture_output=True, text=True)
+    if _processes_running(name):
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/IM", name, "/T", "/F"], capture_output=True, text=True)
+        else:
+            subprocess.run(["pkill", "-9", "-x", name], capture_output=True, text=True)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _processes_running(exe):
+        if not _processes_running(name):
             return True
         time.sleep(0.3)
     return False
@@ -215,9 +238,9 @@ def setup_youtube_cookies(browser: str, close_first: bool = False) -> dict:
         label = browser.capitalize()
         if kind == "locked":
             return {"error": (
-                f"{label} is currently open, which stops Windows from letting us read its "
-                f"cookies. Fully quit {label} — including background processes, not just the "
-                "window — and try again."
+                f"{label} is currently open, which stops us from reading its cookies. Fully "
+                f"quit {label} — including background processes, not just the window — and "
+                "try again."
             )}
         if kind == "blocked":
             return {"error": (
@@ -248,14 +271,22 @@ def open_youtube_in_browser(browser: str) -> dict:
     own avatar/account menu — which of their Google accounts is currently active there. That
     account is exactly the one that ends up in the exported cookies; Musicflow has no way to
     pick a different one on its own, since the cookie jar only ever reflects whichever account
-    the browser itself currently has active for youtube.com. Resolves the browser via Windows'
-    own "start <exe>" (the same App Paths lookup Win+R uses) rather than a full path, since we
-    never learn one from anywhere else."""
-    exe = _BROWSER_EXE_NAMES.get(browser)
-    if not exe:
-        return {"error": f"Unsupported browser: {browser}"}
+    the browser itself currently has active for youtube.com. Resolves the browser via the OS's
+    own app lookup (Windows' "start <exe>", the same App Paths lookup Win+R uses; macOS's
+    "open -a <app name>") rather than a full path, since we never learn one from anywhere
+    else."""
+    url = "https://www.youtube.com/"
     try:
-        subprocess.Popen(["cmd", "/c", "start", "", exe, "https://www.youtube.com/"])
+        if sys.platform == "win32":
+            exe = _BROWSER_EXE_NAMES.get(browser)
+            if not exe:
+                return {"error": f"Unsupported browser: {browser}"}
+            subprocess.Popen(["cmd", "/c", "start", "", exe, url])
+        else:
+            app = _BROWSER_APP_NAMES_MAC.get(browser)
+            if not app:
+                return {"error": f"Unsupported browser: {browser}"}
+            subprocess.Popen(["open", "-a", app, url])
         return {"ok": True}
     except OSError as e:
         return {"error": f"Couldn't open {browser}: {e}"}
@@ -273,20 +304,27 @@ def rename_lyrics_backups(old_mp3_path: str, new_mp3_path: str) -> None:
             pass
 
 
+# Bundled binaries ship with a .exe suffix on Windows and no suffix everywhere else (see
+# musicflow-backend.spec, which mirrors this same platform split for what it bundles).
+_EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
+
+
 def find_ffmpeg() -> str | None:
     # Check for a bundled ffmpeg first (PyInstaller build, or dev "bin" folder)
     if getattr(sys, "frozen", False):
-        bundled = os.path.join(sys._MEIPASS, "bin", "ffmpeg.exe")
+        bundled = os.path.join(sys._MEIPASS, "bin", f"ffmpeg{_EXE_SUFFIX}")
         if os.path.isfile(bundled):
             return os.path.dirname(bundled)
     else:
-        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "ffmpeg.exe")
+        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", f"ffmpeg{_EXE_SUFFIX}")
         if os.path.isfile(dev_bundled):
             return os.path.dirname(dev_bundled)
 
     path = shutil.which("ffmpeg")
     if path:
         return os.path.dirname(path)
+    if sys.platform != "win32":
+        return None
     # Check common winget install location
     winget_dir = os.path.join(
         os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages"
@@ -308,11 +346,11 @@ def find_deno() -> str | None:
     if not found, downloads just proceed without js_runtimes set (yt-dlp's own degraded-but-
     working fallback), same best-effort spirit as everything else here."""
     if getattr(sys, "frozen", False):
-        bundled = os.path.join(sys._MEIPASS, "bin", "deno.exe")
+        bundled = os.path.join(sys._MEIPASS, "bin", f"deno{_EXE_SUFFIX}")
         if os.path.isfile(bundled):
             return bundled
     else:
-        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "deno.exe")
+        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", f"deno{_EXE_SUFFIX}")
         if os.path.isfile(dev_bundled):
             return dev_bundled
     return shutil.which("deno")
@@ -325,11 +363,11 @@ def find_node() -> str | None:
     extractor_args for why that fallback isn't good enough by itself). Optional, same as Deno:
     without it, downloads just proceed without a PO token."""
     if getattr(sys, "frozen", False):
-        bundled = os.path.join(sys._MEIPASS, "bin", "node.exe")
+        bundled = os.path.join(sys._MEIPASS, "bin", f"node{_EXE_SUFFIX}")
         if os.path.isfile(bundled):
             return bundled
     else:
-        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "node.exe")
+        dev_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", f"node{_EXE_SUFFIX}")
         if os.path.isfile(dev_bundled):
             return dev_bundled
     return shutil.which("node")

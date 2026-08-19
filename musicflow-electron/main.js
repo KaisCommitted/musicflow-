@@ -42,27 +42,33 @@ function getFreePort() {
   });
 }
 
-/** `build/` is only packaged as far as electron-builder's own `win.icon` (it bakes the icon
- * into the compiled .exe's resources at build time) — it was never actually included in the
- * app bundle for main.js to read at runtime, so this path resolved to a file that didn't
- * exist inside app.asar. BrowserWindow's `icon` option failed silently on that; `new Tray()`
- * does not — it throws, which is what actually surfaced this. Fixed by shipping the icon as
- * a real extraResource (see package.json) instead of reading it from inside the asar. */
+/** `build/` is only packaged as far as electron-builder's own `win.icon`/`mac.icon` (it bakes
+ * the icon into the compiled binary's resources at build time) — it was never actually
+ * included in the app bundle for main.js to read at runtime, so this path resolved to a file
+ * that didn't exist inside app.asar. BrowserWindow's `icon` option failed silently on that;
+ * `new Tray()` does not — it throws, which is what actually surfaced this. Fixed by shipping
+ * the icon as a real extraResource (see package.json) instead of reading it from inside the
+ * asar. macOS has no .ico support, hence the separate .png (see build/ generation in
+ * .github/workflows/release.yml). */
 function iconPath() {
+  const name = process.platform === "win32" ? "icon.ico" : "icon.png";
   return app.isPackaged
-    ? path.join(process.resourcesPath, "icon.ico")
-    : path.join(__dirname, "build", "icon.ico");
+    ? path.join(process.resourcesPath, name)
+    : path.join(__dirname, "build", name);
 }
 
 function backendCommand() {
   if (app.isPackaged) {
-    const exe = path.join(process.resourcesPath, "backend", "musicflow-backend.exe");
+    const name = process.platform === "win32" ? "musicflow-backend.exe" : "musicflow-backend";
+    const exe = path.join(process.resourcesPath, "backend", name);
     return { cmd: exe, args: [], cwd: path.dirname(exe) };
   }
-  // Dev: run straight from source with the system Python — same code path `py server.py`
-  // already uses, no PyInstaller round trip needed while iterating on `npm start`.
+  // Dev: run straight from source with the system Python — same code path `py server.py` /
+  // `python3 server.py` already uses, no PyInstaller round trip needed while iterating on
+  // `npm start`. Windows ships the "py" launcher; macOS/Linux use "python3".
   const apiDir = path.join(__dirname, "..", "musicflow-api");
-  return { cmd: "py", args: ["electron_main.py"], cwd: apiDir };
+  const pythonCmd = process.platform === "win32" ? "py" : "python3";
+  return { cmd: pythonCmd, args: ["electron_main.py"], cwd: apiDir };
 }
 
 function logPath() {
@@ -116,6 +122,10 @@ async function startBackend() {
     cwd,
     env: { ...process.env, MUSICFLOW_PORT: String(backendPort) },
     windowsHide: true,
+    // On posix, killBackend() below signals the whole process group via a negative pid — that
+    // only works if this child is actually its own group leader, which spawn only does when
+    // asked. Harmless no-op on Windows (windowsHide covers that platform's equivalent).
+    detached: process.platform !== "win32",
   });
 
   backendProcess.stdout?.on("data", (d) => log("[backend]", d.toString().trim()));
@@ -249,8 +259,8 @@ function createWindow() {
   });
 }
 
-/** Windows tray icon — the only way back once the window's been hidden, and the "Quit" item
- * is the only way to actually exit now that closing the window just hides it. */
+/** Tray icon — the only way back once the window's been hidden, and the "Quit" item is the
+ * only way to actually exit now that closing the window just hides it. */
 function createTray() {
   tray = new Tray(iconPath());
   tray.setToolTip("Musicflow");
@@ -276,8 +286,9 @@ function createTray() {
     ]),
   );
 
-  // Left-click (Windows convention — macOS/Linux tray clicks open the context menu instead,
-  // not relevant here since this app only ships for Windows).
+  // Left-click shows the window (Windows/Linux convention). macOS ignores this handler for
+  // clicks on the tray icon itself — it always opens the context menu set above instead — so
+  // this is a no-op there, not a bug.
   tray.on("click", showWindow);
 }
 

@@ -7,7 +7,9 @@
   "scripts": {
     "start": "electron .",
     "build:backend": "cd ../musicflow-api && py -m PyInstaller musicflow-backend.spec --noconfirm",
+    "build:backend:mac": "cd ../musicflow-api && python3 -m PyInstaller musicflow-backend.spec --noconfirm",
     "dist": "npm run build:backend && electron-builder --win",
+    "dist:mac": "npm run build:backend:mac && electron-builder --mac",
     "dist:publish": "npm run build:backend && electron-builder --win --publish always"
   },
   "devDependencies": {
@@ -30,10 +32,6 @@
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": "build/icon.ico",
-        "to": "icon.ico"
       }
     ],
     "directories": {
@@ -44,7 +42,13 @@
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "extraResources": [
+        {
+          "from": "build/icon.ico",
+          "to": "icon.ico"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -53,6 +57,22 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Musicflow"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.music",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null,
+      "extraResources": [
+        {
+          "from": "build/icon.png",
+          "to": "icon.png"
+        }
+      ]
     },
     "publish": [
       {

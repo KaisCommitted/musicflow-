@@ -55,12 +55,20 @@ Releases. The package version comes from the tag, not `package.json`.
 ## Update checks
 
 On launch (packaged builds only — see `updater.js`), Musicflow checks GitHub Releases for a
-newer version:
+newer version and, if found, tells the renderer over IPC — the renderer owns all of the actual
+UI from there (see `UpdateBanner.tsx` / `useAppUpdate.ts`), a small in-app banner rather than
+any native OS dialog:
 
-- **Windows**: real auto-update via `electron-updater`. It downloads the new version in the
-  background and, once ready, asks to restart and install now or wait until next quit. Works
-  unsigned — NSIS auto-update doesn't require a code-signing cert.
-- **macOS**: notice only. A dialog says a new version is available and offers to open the
-  GitHub release page; the user downloads and runs it manually, same as today. Real auto-update
+- **Windows**: real auto-update via `electron-updater`, but nothing happens until the user
+  clicks the banner — it never downloads or installs on its own. Clicking "Update" downloads in
+  the background (the banner shows progress), and once ready the banner offers "Restart now".
+  That restart is a **silent** install (`quitAndInstall(true, true)`) — no NSIS installer wizard
+  window, just quit → install → relaunch. Works unsigned — NSIS auto-update doesn't require a
+  code-signing cert. Differential (delta) downloads are deliberately disabled
+  (`disableDifferentialDownload`): a filename convention change once already broke the
+  old-version blockmap lookup between two releases (see git history), and always doing a full
+  download sidesteps that whole class of bug.
+- **macOS**: notice only, same banner — clicking it opens the GitHub release page instead of
+  downloading, since the user has to grab and run the new version manually. Real auto-update
   (Squirrel.Mac) requires the app be code-signed and notarized, which it currently isn't — so
   this is the ceiling without paying for an Apple Developer cert.

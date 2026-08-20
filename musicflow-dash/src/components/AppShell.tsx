@@ -6,6 +6,7 @@ import { FullScreenPlayer } from "@/components/FullScreenPlayer";
 import { SongContextMenu } from "@/components/SongContextMenu";
 import { FolderSetupGate } from "@/components/FolderSetupGate";
 import { TitleBar } from "@/components/TitleBar";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { useLibrary } from "@/store/library";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDiscordPresence } from "@/hooks/useDiscordPresence";
@@ -77,6 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <QueuePanel />
         <FullScreenPlayer />
         <SongContextMenu />
+        <UpdateBanner />
       </div>
     </div>
   );

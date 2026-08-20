@@ -23,4 +23,25 @@ contextBridge.exposeInMainWorld("musicflow", {
     ipcRenderer.on("window:maximized-changed", listener);
     return () => ipcRenderer.removeListener("window:maximized-changed", listener);
   },
+
+  // Update banner (see updater.js) — main only checks and reports state; the renderer owns
+  // the actual UI and asks back for each step the user takes.
+  onUpdateAvailable: (callback) => {
+    const listener = (_event, info) => callback(info);
+    ipcRenderer.on("update:available", listener);
+    return () => ipcRenderer.removeListener("update:available", listener);
+  },
+  onUpdateProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on("update:progress", listener);
+    return () => ipcRenderer.removeListener("update:progress", listener);
+  },
+  onUpdateReady: (callback) => {
+    const listener = (_event, info) => callback(info);
+    ipcRenderer.on("update:ready", listener);
+    return () => ipcRenderer.removeListener("update:ready", listener);
+  },
+  downloadUpdate: () => ipcRenderer.send("update:download"),
+  installUpdate: () => ipcRenderer.send("update:install"),
+  openUpdatePage: () => ipcRenderer.send("update:open-page"),
 });

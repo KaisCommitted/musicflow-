@@ -1,23 +1,34 @@
-const { app, dialog, shell } = require("electron");
+const { app, ipcMain, shell } = require("electron");
 const https = require("https");
 
-// Windows can update itself in place (electron-builder's NSIS target supports differential
-// auto-update even unsigned — see musicflow-electron/README.md "Releasing"). macOS can't:
-// Squirrel.Mac (the auto-update mechanism electron-updater would otherwise use there) refuses
-// to run against an unsigned/unnotarized app, and this app is neither — right-click-Open is
-// already the workaround for first launch, so a real "update in place" isn't on the table
-// without paying for an Apple Developer cert. Mac instead just gets told a new version exists
-// and is pointed at the release page to grab it manually, same as before this file existed.
+// Windows can update itself in place (electron-builder's NSIS target supports this even
+// unsigned — see musicflow-electron/README.md "Update checks"). macOS can't: Squirrel.Mac (the
+// mechanism electron-updater would otherwise use there) refuses to run against an
+// unsigned/unnotarized app, and this app is neither. Mac instead just gets told a new version
+// exists and is pointed at the release page to grab it manually.
+//
+// Neither platform downloads or installs anything on its own — this only checks and tells the
+// renderer, which owns the actual banner/progress UI (see UpdateBanner.tsx) and asks back over
+// IPC (update:download / update:install / update:open-page) once the user actually clicks it.
 function checkForUpdates(mainWindow, log) {
   if (!app.isPackaged) return; // noisy and pointless while running from source in dev
   if (process.platform === "win32") checkWindows(mainWindow, log);
-  else if (process.platform === "darwin") checkMac(log);
+  else if (process.platform === "darwin") checkMac(mainWindow, log);
+}
+
+function send(mainWindow, channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 }
 
 function checkWindows(mainWindow, log) {
   const { autoUpdater } = require("electron-updater");
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = false; // we ask first — see update-downloaded below
+  autoUpdater.autoDownload = false; // renderer asks for it explicitly, see update:download below
+  autoUpdater.autoInstallOnAppQuit = false;
+  // v1.7.0 -> v1.7.1 briefly broke differential downloads: the installer's filename changed
+  // (versioned -> stable, see git history), so electron-updater's guessed URL for the *old*
+  // version's blockmap 404'd. Always doing a full download avoids that whole class of bug, at
+  // the cost of always paying full size -- fine for a small friends-and-family install base.
+  autoUpdater.disableDifferentialDownload = true;
   autoUpdater.logger = {
     info: (msg) => log("[updater]", msg),
     warn: (msg) => log("[updater] warn:", msg),
@@ -25,27 +36,33 @@ function checkWindows(mainWindow, log) {
   };
 
   autoUpdater.on("error", (err) => log("[updater] error:", err.message));
-
+  autoUpdater.on("update-available", (info) => {
+    send(mainWindow, "update:available", { version: info.version, mode: "auto" });
+  });
+  autoUpdater.on("download-progress", (progress) => {
+    send(mainWindow, "update:progress", { percent: Math.round(progress.percent) });
+  });
   autoUpdater.on("update-downloaded", (info) => {
-    dialog
-      .showMessageBox(mainWindow, {
-        type: "info",
-        buttons: ["Restart now", "Later"],
-        defaultId: 0,
-        cancelId: 1,
-        title: "Update ready",
-        message: `Musicflow ${info.version} has been downloaded.`,
-        detail: "Restart now to finish installing it, or it'll install next time you quit Musicflow.",
-      })
-      .then(({ response }) => {
-        if (response === 0) autoUpdater.quitAndInstall();
-      });
+    send(mainWindow, "update:ready", { version: info.version });
+  });
+
+  ipcMain.on("update:download", () => {
+    autoUpdater.downloadUpdate().catch((err) => log("[updater] download failed:", err.message));
+  });
+  ipcMain.on("update:install", () => {
+    // isSilent + isForceRunAfter: no NSIS installer wizard, just quit, install in the
+    // background, and relaunch -- the renderer's own progress UI already carried the "this is
+    // updating" story, so this should read as one continuous step, not a second unfamiliar
+    // window on top of it.
+    autoUpdater.quitAndInstall(true, true);
   });
 
   autoUpdater.checkForUpdates().catch((err) => log("[updater] check failed:", err.message));
 }
 
-function checkMac(log) {
+let macReleaseUrl = null;
+
+function checkMac(mainWindow, log) {
   const currentVersion = app.getVersion();
   const req = https.get(
     {
@@ -61,7 +78,8 @@ function checkMac(log) {
           const release = JSON.parse(body);
           const latestVersion = String(release.tag_name || "").replace(/^v/, "");
           if (latestVersion && isNewer(latestVersion, currentVersion)) {
-            promptMacUpdate(latestVersion, currentVersion, release.html_url);
+            macReleaseUrl = release.html_url;
+            send(mainWindow, "update:available", { version: latestVersion, mode: "manual" });
           }
         } catch (err) {
           log("[updater] failed to parse release info:", err.message);
@@ -72,21 +90,9 @@ function checkMac(log) {
   req.on("error", (err) => log("[updater] check failed:", err.message));
 }
 
-function promptMacUpdate(latestVersion, currentVersion, releaseUrl) {
-  dialog
-    .showMessageBox({
-      type: "info",
-      buttons: ["Open download page", "Later"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "Update available",
-      message: `Musicflow ${latestVersion} is available (you have ${currentVersion}).`,
-      detail: "Musicflow can't install updates itself on macOS — download the new version and run it to update.",
-    })
-    .then(({ response }) => {
-      if (response === 0) shell.openExternal(releaseUrl);
-    });
-}
+ipcMain.on("update:open-page", () => {
+  if (macReleaseUrl) shell.openExternal(macReleaseUrl);
+});
 
 /** Plain dotted-integer semver compare (no pre-release suffixes — release tags are always
  * "v<major>.<minor>.<patch>", see the Release workflow). */

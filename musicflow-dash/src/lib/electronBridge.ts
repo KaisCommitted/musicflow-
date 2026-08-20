@@ -7,6 +7,20 @@ export interface GlobalKeybind {
   combo: string;
 }
 
+export interface UpdateAvailableInfo {
+  version: string;
+  /** "auto" = Windows, updates in place. "manual" = macOS, can only point at the release page. */
+  mode: "auto" | "manual";
+}
+
+export interface UpdateProgress {
+  percent: number;
+}
+
+export interface UpdateReadyInfo {
+  version: string;
+}
+
 declare global {
   interface Window {
     musicflow?: {
@@ -18,6 +32,12 @@ declare global {
       quitApp: () => void;
       isWindowMaximized: () => Promise<boolean>;
       onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void;
+      onUpdateAvailable: (callback: (info: UpdateAvailableInfo) => void) => () => void;
+      onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
+      onUpdateReady: (callback: (info: UpdateReadyInfo) => void) => () => void;
+      downloadUpdate: () => void;
+      installUpdate: () => void;
+      openUpdatePage: () => void;
     };
   }
 }
@@ -42,7 +62,21 @@ export const closeWindow = () => window.musicflow?.closeWindow();
  * tray — the app keeps running in the background until this (or the tray's own "Quit") is
  * used. */
 export const quitApp = () => window.musicflow?.quitApp();
-export const isWindowMaximized = () => window.musicflow?.isWindowMaximized() ?? Promise.resolve(false);
+export const isWindowMaximized = () =>
+  window.musicflow?.isWindowMaximized() ?? Promise.resolve(false);
 export const onWindowMaximizedChange = (callback: (maximized: boolean) => void): (() => void) => {
   return window.musicflow?.onWindowMaximizedChange(callback) ?? (() => {});
 };
+
+export const onUpdateAvailable = (callback: (info: UpdateAvailableInfo) => void): (() => void) => {
+  return window.musicflow?.onUpdateAvailable(callback) ?? (() => {});
+};
+export const onUpdateProgress = (callback: (progress: UpdateProgress) => void): (() => void) => {
+  return window.musicflow?.onUpdateProgress(callback) ?? (() => {});
+};
+export const onUpdateReady = (callback: (info: UpdateReadyInfo) => void): (() => void) => {
+  return window.musicflow?.onUpdateReady(callback) ?? (() => {});
+};
+export const downloadUpdate = () => window.musicflow?.downloadUpdate();
+export const installUpdate = () => window.musicflow?.installUpdate();
+export const openUpdatePage = () => window.musicflow?.openUpdatePage();

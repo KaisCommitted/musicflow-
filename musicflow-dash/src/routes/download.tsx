@@ -14,6 +14,7 @@ import {
   ListMusic,
   Loader2,
   LogIn,
+  Music2,
   Pause,
   Play,
   RotateCcw,
@@ -37,6 +38,8 @@ import {
   withArtworkSize,
   type HistoryDetail,
   type HistoryJobSummary,
+  type SpotifyResolvedPlaylist,
+  type YoutubeResolvedPlaylist,
 } from "@/lib/api";
 import { useDownload } from "@/store/download";
 import { usePlayer } from "@/store/player";
@@ -68,8 +71,13 @@ function StatusIcon({ status }: { status: string }) {
 }
 
 const BROWSER_LABELS: Record<string, string> = {
-  chrome: "Chrome", firefox: "Firefox", edge: "Edge", brave: "Brave", opera: "Opera",
-  vivaldi: "Vivaldi", chromium: "Chromium",
+  chrome: "Chrome",
+  firefox: "Firefox",
+  edge: "Edge",
+  brave: "Brave",
+  opera: "Opera",
+  vivaldi: "Vivaldi",
+  chromium: "Chromium",
 };
 
 function joinBrowserNames(browsers: string[]): string {
@@ -101,9 +109,7 @@ function BrowserPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors hover:border-primary/60 focus:border-primary">
-          {value && (
-            <img src={`/browser-icons/${value}.svg`} alt="" className="h-4 w-4" />
-          )}
+          {value && <img src={`/browser-icons/${value}.svg`} alt="" className="h-4 w-4" />}
           {BROWSER_LABELS[value] ?? value}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
@@ -288,18 +294,49 @@ function YoutubeLoginCard() {
   );
 }
 
+type LineKind = "song" | "spotify" | "youtube" | "unrecognized";
+
+/** One box, three formats — a line is a Spotify/YouTube playlist link if it looks like one,
+ * a link we don't recognize (some other site, or a plain YouTube video rather than a
+ * playlist — search only ever does a text search, see main.py, so a bare video URL would
+ * silently search for its own URL as text and find nothing) if it's a link at all, and a
+ * plain "Artist – Title" song query otherwise. */
+function classifyLine(line: string): LineKind {
+  if (/(^|\.)spotify\.com\/playlist\/|^spotify:playlist:/i.test(line)) return "spotify";
+  if (/(youtube\.com|youtu\.be)\/.*[?&]list=/i.test(line)) return "youtube";
+  if (/^https?:\/\//i.test(line)) return "unrecognized";
+  return "song";
+}
+
+function FormatChip({
+  icon,
+  label,
+  className,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground",
+        className,
+      )}
+    >
+      {icon}
+      {label}
+    </span>
+  );
+}
+
 const PAGE_SIZE = 10;
 
 function DownloadPage() {
   const [tab, setTab] = useState<"download" | "history">("download");
-  const [inputMode, setInputMode] = useState<"songs" | "spotify" | "youtube">("songs");
   const [text, setText] = useState("");
-  const [spotifyText, setSpotifyText] = useState("");
-  const [spotifyResolving, setSpotifyResolving] = useState(false);
-  const [spotifyError, setSpotifyError] = useState<string | null>(null);
-  const [youtubeText, setYoutubeText] = useState("");
-  const [youtubeResolving, setYoutubeResolving] = useState(false);
-  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const {
     jobId,
@@ -325,96 +362,76 @@ function DownloadPage() {
     _resumeIfNeeded();
   }, [_resumeIfNeeded]);
 
-  const queries = text
+  const lines = text
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
-
-  const spotifyUrls = spotifyText
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const youtubeUrls = youtubeText
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const songQueries = lines.filter((l) => classifyLine(l) === "song");
+  const spotifyUrls = lines.filter((l) => classifyLine(l) === "spotify");
+  const youtubeUrls = lines.filter((l) => classifyLine(l) === "youtube");
+  const unrecognized = lines.filter((l) => classifyLine(l) === "unrecognized");
 
   const handleStart = async () => {
-    setPage(0);
-    await start(queries);
-    setText("");
-  };
-
-  const handleSpotifyStart = async () => {
-    if (!spotifyUrls.length) return;
-    setSpotifyResolving(true);
-    setSpotifyError(null);
+    if (!lines.length) return;
+    setResolving(true);
+    setResolveError(null);
     try {
-      const { playlists } = await resolveSpotifyPlaylists(spotifyUrls);
-      const ok = playlists.filter(
-        (p): p is typeof p & { name: string; queries: string[] } => !!p.queries?.length,
-      );
-      const failed = playlists.filter((p) => p.error);
-      if (!ok.length) {
-        setSpotifyError(
-          failed.map((f) => `${f.url} — ${f.error}`).join("\n") || "Couldn't read any of those playlists.",
+      const [spotifyRes, youtubeRes] = await Promise.all([
+        spotifyUrls.length
+          ? resolveSpotifyPlaylists(spotifyUrls)
+          : Promise.resolve({ playlists: [] }),
+        youtubeUrls.length
+          ? resolveYoutubePlaylists(youtubeUrls)
+          : Promise.resolve({ playlists: [] }),
+      ]);
+      const isResolved = (
+        p: SpotifyResolvedPlaylist | YoutubeResolvedPlaylist,
+      ): p is (SpotifyResolvedPlaylist | YoutubeResolvedPlaylist) & {
+        name: string;
+        queries: string[];
+      } => !!p.queries?.length;
+      const spotifyOk = spotifyRes.playlists.filter(isResolved);
+      const youtubeOk = youtubeRes.playlists.filter(isResolved);
+      const failed = [...spotifyRes.playlists, ...youtubeRes.playlists].filter((p) => p.error);
+
+      const allQueries = [
+        ...songQueries,
+        ...spotifyOk.flatMap((p) => p.queries),
+        ...youtubeOk.flatMap((p) => p.queries),
+      ];
+      if (!allQueries.length) {
+        setResolveError(
+          failed.map((f) => `${f.url} — ${f.error}`).join("\n") ||
+            "Couldn't read any of those playlists.",
         );
         return;
       }
-      setPage(0);
-      await start(
-        ok.flatMap((p) => p.queries),
-        {
-          playlists: ok.map((p) => ({
-            name: p.name,
-            queries: p.queries,
-            ...(p.truncated ? { note: "Only the first 100 tracks could be read from Spotify" } : {}),
-          })),
-          resolveFailures: failed.map((f) => ({ name: f.url, error: f.error! })),
-        },
-      );
-      setSpotifyText("");
-    } catch (e) {
-      setSpotifyError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSpotifyResolving(false);
-    }
-  };
 
-  const handleYoutubeStart = async () => {
-    if (!youtubeUrls.length) return;
-    setYoutubeResolving(true);
-    setYoutubeError(null);
-    try {
-      const { playlists } = await resolveYoutubePlaylists(youtubeUrls);
-      const ok = playlists.filter(
-        (p): p is typeof p & { name: string; queries: string[] } => !!p.queries?.length,
-      );
-      const failed = playlists.filter((p) => p.error);
-      if (!ok.length) {
-        setYoutubeError(
-          failed.map((f) => `${f.url} — ${f.error}`).join("\n") || "Couldn't read any of those playlists.",
-        );
-        return;
-      }
       setPage(0);
-      await start(
-        ok.flatMap((p) => p.queries),
-        {
-          playlists: ok.map((p) => ({
+      await start(allQueries, {
+        playlists: [
+          ...spotifyOk.map((p) => ({
             name: p.name,
             queries: p.queries,
-            ...(p.truncated ? { note: "Only the first 300 videos could be read from this playlist" } : {}),
+            ...(p.truncated
+              ? { note: "Only the first 100 tracks could be read from Spotify" }
+              : {}),
           })),
-          resolveFailures: failed.map((f) => ({ name: f.url, error: f.error! })),
-        },
-      );
-      setYoutubeText("");
+          ...youtubeOk.map((p) => ({
+            name: p.name,
+            queries: p.queries,
+            ...(p.truncated
+              ? { note: "Only the first 300 videos could be read from this playlist" }
+              : {}),
+          })),
+        ],
+        resolveFailures: failed.map((f) => ({ name: f.url, error: f.error! })),
+      });
+      setText("");
     } catch (e) {
-      setYoutubeError(e instanceof Error ? e.message : String(e));
+      setResolveError(e instanceof Error ? e.message : String(e));
     } finally {
-      setYoutubeResolving(false);
+      setResolving(false);
     }
   };
 
@@ -466,118 +483,97 @@ function DownloadPage() {
             >
               <h1 className="text-2xl font-bold">Download</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {inputMode === "songs"
-                  ? 'One song per line — "Artist – Title" works best.'
-                  : inputMode === "spotify"
-                    ? "One Spotify playlist link per line — every track gets searched and downloaded from YouTube."
-                    : "One YouTube playlist link per line — every video gets downloaded and tagged with matched metadata."}
+                One box, mix and match — song names, Spotify playlist links, and YouTube playlist
+                links can all go in together.
               </p>
 
-              <Tabs
-                value={inputMode}
-                onValueChange={(v) => setInputMode(v as "songs" | "spotify" | "youtube")}
-                className="mt-6"
-              >
-                <TabsList>
-                  <TabsTrigger value="songs">Songs</TabsTrigger>
-                  <TabsTrigger value="spotify">Spotify playlist</TabsTrigger>
-                  <TabsTrigger value="youtube">YouTube playlist</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Music2 className="h-3.5 w-3.5" /> Artist – Title
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <ListMusic className="h-3.5 w-3.5 text-[#1DB954]" /> Spotify playlist link
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <ListMusic className="h-3.5 w-3.5 text-[#FF0000]" /> YouTube playlist link
+                </span>
+              </div>
 
-              <div className="mt-4 w-full max-w-2xl">
-                {inputMode === "songs" ? (
-                  <>
-                    <textarea
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      rows={12}
-                      placeholder={
-                        "Daft Punk – Digital Love\nTame Impala – Let It Happen\nArctic Monkeys – Do I Wanna Know?"
-                      }
-                      className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
-                    />
-                    <div className="mt-4 flex justify-center">
-                      <button
-                        onClick={handleStart}
-                        disabled={!queries.length}
-                        className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
-                      >
-                        <Play className="h-4 w-4" /> Start Download{" "}
-                        {queries.length ? `(${queries.length})` : ""}
-                      </button>
-                    </div>
-                    {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
-                  </>
-                ) : inputMode === "spotify" ? (
-                  <>
-                    <textarea
-                      value={spotifyText}
-                      onChange={(e) => setSpotifyText(e.target.value)}
-                      rows={12}
-                      placeholder={
-                        "https://open.spotify.com/playlist/...\nhttps://open.spotify.com/playlist/..."
-                      }
-                      className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
-                    />
-                    <div className="mt-4 flex justify-center">
-                      <button
-                        onClick={() => void handleSpotifyStart()}
-                        disabled={!spotifyUrls.length || spotifyResolving}
-                        className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
-                      >
-                        {spotifyResolving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                        {spotifyResolving
-                          ? "Reading playlist…"
-                          : `Import & Download${spotifyUrls.length ? ` (${spotifyUrls.length})` : ""}`}
-                      </button>
-                    </div>
-                    {spotifyError && (
-                      <p className="mt-3 whitespace-pre-line text-center text-xs text-destructive">
-                        {spotifyError}
-                      </p>
+              <div className="surface mt-4 w-full max-w-2xl p-4">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={12}
+                  placeholder={
+                    "Daft Punk – Digital Love\nhttps://open.spotify.com/playlist/...\nhttps://www.youtube.com/playlist?list=..."
+                  }
+                  className="w-full resize-y rounded-lg border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
+                />
+
+                {/* Live breakdown — confirms what each line will actually do before starting. */}
+                {lines.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {songQueries.length > 0 && (
+                      <FormatChip
+                        icon={<Music2 className="h-3.5 w-3.5" />}
+                        label={`${songQueries.length} song${songQueries.length === 1 ? "" : "s"}`}
+                      />
                     )}
-                    {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
-                  </>
-                ) : (
-                  <>
-                    <textarea
-                      value={youtubeText}
-                      onChange={(e) => setYoutubeText(e.target.value)}
-                      rows={12}
-                      placeholder={
-                        "https://www.youtube.com/playlist?list=...\nhttps://www.youtube.com/playlist?list=..."
-                      }
-                      className="w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm outline-none transition-colors focus:border-primary"
-                    />
-                    <div className="mt-4 flex justify-center">
-                      <button
-                        onClick={() => void handleYoutubeStart()}
-                        disabled={!youtubeUrls.length || youtubeResolving}
-                        className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
-                      >
-                        {youtubeResolving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                        {youtubeResolving
-                          ? "Reading playlist…"
-                          : `Import & Download${youtubeUrls.length ? ` (${youtubeUrls.length})` : ""}`}
-                      </button>
-                    </div>
-                    {youtubeError && (
-                      <p className="mt-3 whitespace-pre-line text-center text-xs text-destructive">
-                        {youtubeError}
-                      </p>
+                    {spotifyUrls.length > 0 && (
+                      <FormatChip
+                        icon={<ListMusic className="h-3.5 w-3.5" />}
+                        label={`${spotifyUrls.length} Spotify playlist${spotifyUrls.length === 1 ? "" : "s"}`}
+                        className="bg-[#1DB954]/15 text-[#1DB954]"
+                      />
                     )}
-                    {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
-                  </>
+                    {youtubeUrls.length > 0 && (
+                      <FormatChip
+                        icon={<ListMusic className="h-3.5 w-3.5" />}
+                        label={`${youtubeUrls.length} YouTube playlist${youtubeUrls.length === 1 ? "" : "s"}`}
+                        className="bg-[#FF0000]/15 text-[#FF0000]"
+                      />
+                    )}
+                    {unrecognized.length > 0 && (
+                      <FormatChip
+                        icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                        label={`${unrecognized.length} link${unrecognized.length === 1 ? "" : "s"} not recognized — will be skipped`}
+                        className="bg-destructive/15 text-destructive"
+                      />
+                    )}
+                  </div>
                 )}
+
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => void handleStart()}
+                    disabled={
+                      (!songQueries.length && !spotifyUrls.length && !youtubeUrls.length) ||
+                      resolving
+                    }
+                    className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+                  >
+                    {resolving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    {resolving
+                      ? spotifyUrls.length || youtubeUrls.length
+                        ? "Reading playlists…"
+                        : "Starting…"
+                      : `Start Download${
+                          songQueries.length + spotifyUrls.length + youtubeUrls.length
+                            ? ` (${songQueries.length + spotifyUrls.length + youtubeUrls.length})`
+                            : ""
+                        }`}
+                  </button>
+                </div>
+                {resolveError && (
+                  <p className="mt-3 whitespace-pre-line text-center text-xs text-destructive">
+                    {resolveError}
+                  </p>
+                )}
+                {error && <p className="mt-3 text-center text-xs text-destructive">{error}</p>}
               </div>
             </motion.div>
           )}
@@ -705,7 +701,12 @@ function DownloadPage() {
                         <p className="truncate">{r.name}</p>
                         {r.note && <p className="truncate text-xs text-warning">{r.note}</p>}
                       </div>
-                      <span className={cn("text-xs", r.ok ? "text-muted-foreground" : "text-destructive")}>
+                      <span
+                        className={cn(
+                          "text-xs",
+                          r.ok ? "text-muted-foreground" : "text-destructive",
+                        )}
+                      >
                         {r.ok ? `${r.count} song${r.count === 1 ? "" : "s"}` : r.error}
                       </span>
                     </div>

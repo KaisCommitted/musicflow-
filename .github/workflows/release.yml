@@ -135,15 +135,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macos-13 is GitHub's last Intel (x64) runner image; macos-14 is Apple Silicon
-          # (arm64). PyInstaller freezes a native binary for whatever machine runs it — it
-          # can't cross-compile — so each arch needs its own real runner rather than one job
-          # building both.
-          - runner: macos-13
+          # macos-15-intel is GitHub's current Intel (x64) runner image (macos-13 — what this
+          # used to say — was fully retired, not just slow: the job queued forever with no
+          # runner ever picking it up); macos-15 is Apple Silicon (arm64). PyInstaller freezes
+          # a native binary for whatever machine runs it — it can't cross-compile — so each
+          # arch needs its own real runner rather than one job building both.
+          - runner: macos-15-intel
             arch: x64
             deno_target: x86_64-apple-darwin
             node_arch: x64
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
             deno_target: aarch64-apple-darwin
             node_arch: arm64

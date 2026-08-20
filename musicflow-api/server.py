@@ -143,6 +143,7 @@ def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, co
                         if os.path.exists(old_lrc):
                             os.rename(old_lrc, final_path.rsplit(".", 1)[0] + ".lrc")
                         rename_lyrics_backups(mp3_path, final_path)
+                        db.rename_lyrics_not_found(mp3_path, final_path)
                         item["file"] = final_path
                         log.info("[download] Skipped & renamed: %s → %s", safe_name, final_name)
                         if files_lock:
@@ -269,6 +270,7 @@ def process_query(item: dict, ffmpeg_path: str | None, deno_path: str | None, co
                         if os.path.exists(old_lrc):
                             os.rename(old_lrc, final_path.rsplit(".", 1)[0] + ".lrc")
                         rename_lyrics_backups(mp3_path, final_path)
+                        db.rename_lyrics_not_found(mp3_path, final_path)
                         item["file"] = final_path
                         log.info("[download] Renamed: %s → %s", safe_name, final_name)
                         if files_lock:

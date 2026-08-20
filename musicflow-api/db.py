@@ -219,6 +219,19 @@ def mark_lyrics_not_found(path: str, method: str):
     get_conn().commit()
 
 
+def rename_lyrics_not_found(old_path: str, new_path: str):
+    """Keep this table in sync with a renamed file — mirrors rename_lyrics_backups (main.py)
+    doing the same for the {basename}.{method}.lrc files these rows describe. Without this, a
+    song renamed right after its "not found" misses were recorded (e.g. a fresh download
+    corrected from its search-query filename to its real Artist - Title, see server.py) would
+    leave those rows pointing at a path nothing matches anymore — a later lyrics-gen run would
+    then needlessly re-query every source that had already legitimately come up empty."""
+    get_conn().execute(
+        "UPDATE OR IGNORE lyrics_not_found SET path = ? WHERE path = ?", (new_path, old_path)
+    )
+    get_conn().commit()
+
+
 # ── History ──
 
 def save_history(job_id: str, started: str, total: int, done: int, skipped: int,

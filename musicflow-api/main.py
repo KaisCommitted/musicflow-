@@ -537,8 +537,14 @@ def fetch_lyrics_from_source(method: str, artist: str | None, title: str, query:
 def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> str | None:
     """Fetch lyrics from all 6 sources in LYRICS_SOURCE_ORDER — every source is tried, none are
     skipped after a first hit. The first hit in that priority order is returned as the main
-    lyrics (same as before); every other hit is saved next to mp3_path as a backup file named
-    {basename}.{method}.lrc, so the caller (or a future UI) can offer alternates to switch between."""
+    lyrics (the caller writes it via apply_metadata, alongside the rest of the song's tags, in
+    one ID3 save); every hit — including the main one — is also saved next to mp3_path as its
+    own backup file named {basename}.{method}.lrc, and every source that comes up legitimately
+    empty (not a request error) is recorded via db.mark_lyrics_not_found. Both are exactly what
+    the batch "Generate lyrics" job does for each source it tries (see _write_lyrics_backup /
+    process_item in server.py) — so a song downloaded here reads, lyrics-wise, as if a full
+    lyrics-gen pass already ran on it: rerunning Generate Lyrics afterward won't re-query a
+    single source, found or not, that this already resolved."""
     search_term = f"{artist} {title}" if artist else query
     log.info("[lyrics] Searching: %s", search_term)
 
@@ -549,26 +555,24 @@ def fetch_lyrics(artist: str | None, title: str, query: str, mp3_path: str) -> s
             is_synced = text.lstrip().startswith("[")
             log.info("[lyrics] ✓ Found via %s (%s) for: %s", method, "synced" if is_synced else "plain", search_term)
             results.append((method, text))
+            backup_path = mp3_path.rsplit(".", 1)[0] + f".{method}.lrc"
+            try:
+                with open(backup_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                log.info("[lyrics] Saved backup (%s): %s", method, backup_path)
+            except Exception as e:
+                log.warning("[lyrics] Failed to save backup (%s) for %s: %s", method, mp3_path, e)
         elif error:
             log.warning("[lyrics] %s error for '%s': %s", method, search_term, error)
         else:
             log.info("[lyrics] %s returned nothing for: %s", method, search_term)
+            db.mark_lyrics_not_found(mp3_path, method)
 
     if not results:
         log.info("[lyrics] ✗ No lyrics found for: %s", search_term)
         return None
 
-    main_method, main_lyrics = results[0]
-    for method, text in results[1:]:
-        backup_path = mp3_path.rsplit(".", 1)[0] + f".{method}.lrc"
-        try:
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(text)
-            log.info("[lyrics] Saved backup (%s): %s", method, backup_path)
-        except Exception as e:
-            log.warning("[lyrics] Failed to save backup (%s) for %s: %s", method, mp3_path, e)
-
-    return main_lyrics
+    return results[0][1]
 
 
 def fetch_music_metadata(artist: str | None, title: str, query: str) -> dict | None:

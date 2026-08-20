@@ -109,6 +109,16 @@ function getAudio(): HTMLAudioElement | null {
     audio.addEventListener("loadedmetadata", () => {
       usePlayer.getState()._tick(audio!.currentTime, audio!.duration || 0);
     });
+    // Playback can pause/resume from outside our own play()/pause() calls — e.g. a headphone
+    // or keyboard media button, which Chromium/Electron handles by calling .pause()/.play()
+    // directly on the <audio> element. Mirror the element's actual state into the store so
+    // every play button (which reads isPlaying from here) stays in sync.
+    audio.addEventListener("play", () => {
+      if (!usePlayer.getState().isPlaying) usePlayer.setState({ isPlaying: true });
+    });
+    audio.addEventListener("pause", () => {
+      if (usePlayer.getState().isPlaying) usePlayer.setState({ isPlaying: false });
+    });
     audio.addEventListener("ended", () => {
       const s = usePlayer.getState();
       if (s.sleepAtTrackEnd) {

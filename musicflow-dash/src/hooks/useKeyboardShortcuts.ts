@@ -94,9 +94,21 @@ export function useKeyboardShortcuts() {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || isCapturingKeybind()) return;
 
+      const combo = comboFromEvent(e);
+
+      // Space always toggles play/pause in-app, no matter what "Play / Pause" is (re)bound to —
+      // whatever that is still works too, as a secondary in-app shortcut (and, if made global,
+      // the only variant of play-pause that reaches outside the app; a bare Space itself can
+      // never go global, see canBeGlobal). Returning here also avoids double-toggling on the
+      // default binding, where "Play / Pause" is *also* bound to Space.
+      if (combo === "Space") {
+        e.preventDefault();
+        runKeybindAction("play-pause");
+        return;
+      }
+
       const settings = useLibrary.getState().settings;
       const bindings = parseKeybinds(settings.keybinds);
-      const combo = comboFromEvent(e);
       const action = (Object.keys(bindings) as KeybindActionId[]).find(
         (id) => bindings[id] === combo,
       );

@@ -20,7 +20,12 @@ export interface KeybindAction {
 }
 
 export const KEYBIND_ACTIONS: KeybindAction[] = [
-  { id: "play-pause", label: "Play / Pause", description: "Toggle playback", category: "Playback" },
+  {
+    id: "play-pause",
+    label: "Play / Pause",
+    description: "Toggle playback. Space always works too, in-app, even if you rebind this.",
+    category: "Playback",
+  },
   { id: "seek-backward", label: "Seek back 5s", description: "Rewind the current song", category: "Playback" },
   { id: "seek-forward", label: "Seek forward 5s", description: "Fast-forward the current song", category: "Playback" },
   { id: "previous-track", label: "Previous track", description: "Jump to the previous song", category: "Playback" },

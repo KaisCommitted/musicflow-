@@ -18,6 +18,7 @@ import type { Song } from "@/lib/api";
 import { AlbumArt } from "@/components/AlbumArt";
 import { LikeButton, toggleLikeMany } from "@/components/LikeButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useLibrary } from "@/store/library";
 import { usePlayer, type PlayContext } from "@/store/player";
 import { useSongMenu } from "@/store/menu";
@@ -73,16 +74,13 @@ function BulkActionsBar({
   const removeSongsFromPlaylist = useLibrary((s) => s.removeSongsFromPlaylist);
   const deleteSong = useLibrary((s) => s.deleteSong);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const paths = useMemo(() => selectedSongs.map((s) => s.path), [selectedSongs]);
   const allLiked =
     paths.length > 0 &&
     paths.every((p) => playlists.find((pl) => pl.name === "Favorites")?.songs.includes(p));
 
   const bulkDelete = async () => {
-    const ok = window.confirm(
-      `Permanently delete ${selectedSongs.length} song${selectedSongs.length === 1 ? "" : "s"}? This removes the files, their metadata, and their lyrics from disk — it can't be undone.`,
-    );
-    if (!ok) return;
     setDeleting(true);
     // Sequential, not Promise.all — each call replaces the store's whole `songs` array with
     // the backend's post-delete list, so running them in parallel would race and could drop
@@ -105,7 +103,9 @@ function BulkActionsBar({
           {selectedSongs.length} selected
         </span>
         <button
-          onClick={() => selectedSongs.length && playQueue(selectedSongs, 0, { label: "Selection", kind: "all" })}
+          onClick={() =>
+            selectedSongs.length && playQueue(selectedSongs, 0, { label: "Selection", kind: "all" })
+          }
           aria-label="Play selection"
           className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
@@ -179,7 +179,7 @@ function BulkActionsBar({
           </button>
         )}
         <button
-          onClick={() => void bulkDelete()}
+          onClick={() => setConfirmDelete(true)}
           disabled={deleting}
           aria-label="Delete selection"
           className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-50"
@@ -195,6 +195,14 @@ function BulkActionsBar({
           <X className="h-4 w-4" />
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete songs?"
+        description={`Permanently delete ${selectedSongs.length} song${selectedSongs.length === 1 ? "" : "s"}? This removes the files, their metadata, and their lyrics from disk — it can't be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => void bulkDelete()}
+      />
     </motion.div>
   );
 }
@@ -399,7 +407,9 @@ export function SongTable({
                       // For the active song, toggle play/pause in place — starting a fresh
                       // playQueue here would restart it from 0 instead of resuming.
                       onClick={() => (active ? toggle() : playQueue(sorted, i, context))}
-                      aria-label={active && isPlaying ? `Pause ${song.title}` : `Play ${song.title}`}
+                      aria-label={
+                        active && isPlaying ? `Pause ${song.title}` : `Play ${song.title}`
+                      }
                       className="hidden group-hover:block"
                     >
                       {active && isPlaying ? (

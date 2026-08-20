@@ -17,6 +17,7 @@ import { useSongMenu } from "@/store/menu";
 import { usePlayer } from "@/store/player";
 import { useLibrary } from "@/store/library";
 import { useView } from "@/store/view";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 
 function Item({
@@ -62,6 +63,9 @@ export function SongContextMenu() {
   const { openAlbum, openArtist } = useView();
   const navigate = useNavigate();
   const [submenu, setSubmenu] = useState(false);
+  // Captured separately from `song` (which the menu itself is keyed on, see useSongMenu) —
+  // confirming needs to outlive the menu, which closes as soon as "Delete Song…" is clicked.
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; title: string } | null>(null);
 
   useEffect(() => {
     if (!song) setSubmenu(false);
@@ -81,168 +85,178 @@ export function SongContextMenu() {
   };
 
   return (
-    <AnimatePresence>
-      {song && (
-        <motion.div
-          key="song-context-menu"
-          initial={{ opacity: 0, scale: 0.92, y: -4 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.12, ease: "easeOut" }}
-          style={{
-            top: Math.min(y, (typeof window !== "undefined" ? window.innerHeight : 800) - 380),
-            left: x,
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
-          className="fixed z-[60] w-60 origin-top-left rounded-xl border border-border bg-popover p-1.5 shadow-elevated"
-        >
-          <p className="truncate px-2.5 py-1 text-[11px] uppercase tracking-widest text-muted-foreground">
-            {song.title}
-          </p>
-          <Item
-            icon={
-              selected ? (
-                <CheckSquare className="h-4 w-4 text-primary" />
-              ) : (
-                <Square className="h-4 w-4" />
-              )
-            }
-            label={selected ? "Deselect" : "Select"}
-            onClick={() => {
-              onToggleSelect();
-              close();
+    <>
+      <AnimatePresence>
+        {song && (
+          <motion.div
+            key="song-context-menu"
+            initial={{ opacity: 0, scale: 0.92, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            style={{
+              top: Math.min(y, (typeof window !== "undefined" ? window.innerHeight : 800) - 380),
+              left: x,
             }}
-          />
-
-          <div className="my-1 h-px bg-border" />
-
-          <Item
-            icon={<Play className="h-4 w-4" />}
-            label="Play Now"
-            onClick={() => {
-              const i = contextSongs.findIndex((s) => s.id === song.id);
-              playQueue(contextSongs, Math.max(0, i), { label: contextLabel, kind: "all" });
-              close();
-            }}
-          />
-          <Item
-            icon={<ListPlus className="h-4 w-4" />}
-            label="Play Next"
-            onClick={() => {
-              playNext(song);
-              close();
-            }}
-          />
-          <Item
-            icon={<ListEnd className="h-4 w-4" />}
-            label="Add to Queue"
-            onClick={() => {
-              addToQueue([song]);
-              close();
-            }}
-          />
-
-          <div className="my-1 h-px bg-border" />
-
-          <div
-            className="relative"
-            onMouseEnter={() => setSubmenu(true)}
-            onMouseLeave={() => setSubmenu(false)}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+            className="fixed z-[60] w-60 origin-top-left rounded-xl border border-border bg-popover p-1.5 shadow-elevated"
           >
+            <p className="truncate px-2.5 py-1 text-[11px] uppercase tracking-widest text-muted-foreground">
+              {song.title}
+            </p>
             <Item
-              icon={<Plus className="h-4 w-4" />}
-              label="Playlists ▸"
-              onClick={() => setSubmenu((v) => !v)}
-            />
-            <AnimatePresence>
-              {submenu && (
-                <motion.div
-                  initial={{ opacity: 0, x: -8, scale: 0.96 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: -8, scale: 0.96 }}
-                  transition={{ duration: 0.12, ease: "easeOut" }}
-                  className="absolute left-full top-0 ml-1 max-h-64 w-56 origin-top-left overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-elevated"
-                >
-                  {playlists.map((p) => {
-                    const inPlaylist = p.songs.includes(song.path);
-                    return (
-                      <Item
-                        key={p.name}
-                        icon={
-                          inPlaylist ? (
-                            <Check className="h-4 w-4 text-primary" />
-                          ) : (
-                            <ListPlus className="h-4 w-4" />
-                          )
-                        }
-                        label={p.name}
-                        onClick={() => {
-                          if (inPlaylist) removeSongFromPlaylist(p.name, song.path);
-                          else addSongToPlaylist(p.name, song.path);
-                          // Keep the submenu open — toggling more than one playlist in a row
-                          // shouldn't require reopening it each time.
-                        }}
-                      />
-                    );
-                  })}
-                  <div className="my-1 h-px bg-border" />
-                  <Item
-                    icon={<Plus className="h-4 w-4" />}
-                    label="Create New…"
-                    onClick={() => {
-                      const name = window.prompt("New playlist name");
-                      if (name) {
-                        addPlaylist(name);
-                        addSongToPlaylist(name, song.path);
-                      }
-                      close();
-                    }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {playlistName && (
-            <Item
-              icon={<Trash2 className="h-4 w-4" />}
-              label={`Remove from ${playlistName}`}
-              danger
+              icon={
+                selected ? (
+                  <CheckSquare className="h-4 w-4 text-primary" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )
+              }
+              label={selected ? "Deselect" : "Select"}
               onClick={() => {
-                removeSongFromPlaylist(playlistName, song.path);
+                onToggleSelect();
                 close();
               }}
             />
-          )}
 
-          <div className="my-1 h-px bg-border" />
-          <Item
-            icon={<Disc3 className="h-4 w-4" />}
-            label="Go to Album"
-            onClick={() => go(() => openAlbum(song.album))}
-          />
-          <Item
-            icon={<User className="h-4 w-4" />}
-            label="Go to Artist"
-            onClick={() => go(() => openArtist(song.artist))}
-          />
+            <div className="my-1 h-px bg-border" />
 
-          <div className="my-1 h-px bg-border" />
-          <Item
-            icon={<Trash2 className="h-4 w-4" />}
-            label="Delete Song…"
-            danger
-            onClick={() => {
-              const ok = window.confirm(
-                `Permanently delete "${song.title}"? This removes the file, its metadata, and its lyrics from disk — it can't be undone.`,
-              );
-              close();
-              if (ok) void deleteSong(song.path);
-            }}
-          />
-        </motion.div>
-      )}
-    </AnimatePresence>
+            <Item
+              icon={<Play className="h-4 w-4" />}
+              label="Play Now"
+              onClick={() => {
+                const i = contextSongs.findIndex((s) => s.id === song.id);
+                playQueue(contextSongs, Math.max(0, i), { label: contextLabel, kind: "all" });
+                close();
+              }}
+            />
+            <Item
+              icon={<ListPlus className="h-4 w-4" />}
+              label="Play Next"
+              onClick={() => {
+                playNext(song);
+                close();
+              }}
+            />
+            <Item
+              icon={<ListEnd className="h-4 w-4" />}
+              label="Add to Queue"
+              onClick={() => {
+                addToQueue([song]);
+                close();
+              }}
+            />
+
+            <div className="my-1 h-px bg-border" />
+
+            <div
+              className="relative"
+              onMouseEnter={() => setSubmenu(true)}
+              onMouseLeave={() => setSubmenu(false)}
+            >
+              <Item
+                icon={<Plus className="h-4 w-4" />}
+                label="Playlists ▸"
+                onClick={() => setSubmenu((v) => !v)}
+              />
+              <AnimatePresence>
+                {submenu && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -8, scale: 0.96 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: -8, scale: 0.96 }}
+                    transition={{ duration: 0.12, ease: "easeOut" }}
+                    className="absolute left-full top-0 ml-1 max-h-64 w-56 origin-top-left overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-elevated"
+                  >
+                    {playlists.map((p) => {
+                      const inPlaylist = p.songs.includes(song.path);
+                      return (
+                        <Item
+                          key={p.name}
+                          icon={
+                            inPlaylist ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <ListPlus className="h-4 w-4" />
+                            )
+                          }
+                          label={p.name}
+                          onClick={() => {
+                            if (inPlaylist) removeSongFromPlaylist(p.name, song.path);
+                            else addSongToPlaylist(p.name, song.path);
+                            // Keep the submenu open — toggling more than one playlist in a row
+                            // shouldn't require reopening it each time.
+                          }}
+                        />
+                      );
+                    })}
+                    <div className="my-1 h-px bg-border" />
+                    <Item
+                      icon={<Plus className="h-4 w-4" />}
+                      label="Create New…"
+                      onClick={() => {
+                        const name = window.prompt("New playlist name");
+                        if (name) {
+                          addPlaylist(name);
+                          addSongToPlaylist(name, song.path);
+                        }
+                        close();
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {playlistName && (
+              <Item
+                icon={<Trash2 className="h-4 w-4" />}
+                label={`Remove from ${playlistName}`}
+                danger
+                onClick={() => {
+                  removeSongFromPlaylist(playlistName, song.path);
+                  close();
+                }}
+              />
+            )}
+
+            <div className="my-1 h-px bg-border" />
+            <Item
+              icon={<Disc3 className="h-4 w-4" />}
+              label="Go to Album"
+              onClick={() => go(() => openAlbum(song.album))}
+            />
+            <Item
+              icon={<User className="h-4 w-4" />}
+              label="Go to Artist"
+              onClick={() => go(() => openArtist(song.artist))}
+            />
+
+            <div className="my-1 h-px bg-border" />
+            <Item
+              icon={<Trash2 className="h-4 w-4" />}
+              label="Delete Song…"
+              danger
+              onClick={() => {
+                setDeleteTarget({ path: song.path, title: song.title });
+                close();
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <ConfirmDialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete song?"
+        description={`Permanently delete "${deleteTarget?.title}"? This removes the file, its metadata, and its lyrics from disk — it can't be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (deleteTarget) void deleteSong(deleteTarget.path);
+          setDeleteTarget(null);
+        }}
+      />
+    </>
   );
 }

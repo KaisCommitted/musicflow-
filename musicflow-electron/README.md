@@ -50,6 +50,17 @@ right-click → Open instead of double-clicking.
 
 Push a tag matching `v*.*.*` (or run the "Release" workflow manually from the Actions tab) — CI
 builds the Windows and macOS (x64 + arm64) installers and publishes all of them to GitHub
-Releases. The package version comes from the tag, not `package.json`. In-app auto-update isn't
-wired up (electron-builder's publish step still produces the manifest for it, so adding that
-later doesn't require repackaging anything).
+Releases. The package version comes from the tag, not `package.json`.
+
+## Update checks
+
+On launch (packaged builds only — see `updater.js`), Musicflow checks GitHub Releases for a
+newer version:
+
+- **Windows**: real auto-update via `electron-updater`. It downloads the new version in the
+  background and, once ready, asks to restart and install now or wait until next quit. Works
+  unsigned — NSIS auto-update doesn't require a code-signing cert.
+- **macOS**: notice only. A dialog says a new version is available and offers to open the
+  GitHub release page; the user downloads and runs it manually, same as today. Real auto-update
+  (Squirrel.Mac) requires the app be code-signed and notarized, which it currently isn't — so
+  this is the ceiling without paying for an Apple Developer cert.

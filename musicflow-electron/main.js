@@ -4,6 +4,7 @@ const net = require("net");
 const http = require("http");
 const fs = require("fs");
 const { spawn, execSync } = require("child_process");
+const { checkForUpdates } = require("./updater");
 
 // Electron derives app.getPath("userData") from the app name, which in dev mode falls back to
 // package.json's "name" ("musicflow-electron") rather than "productName" — pinning it here
@@ -338,6 +339,13 @@ if (!gotLock) {
         createTray();
       } catch (err) {
         log("Tray creation failed (continuing without it):", err.message);
+      }
+      // Best-effort, same as the tray above — a failed update check shouldn't take the app
+      // down, just leave the user on their current version.
+      try {
+        checkForUpdates(mainWindow, log);
+      } catch (err) {
+        log("Update check failed to start:", err.message);
       }
     } catch (err) {
       log("Startup failed:", err.message);

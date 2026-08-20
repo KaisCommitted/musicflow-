@@ -23,7 +23,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "package.json"
+      "updater.js",
+      "package.json",
+      "node_modules/**/*"
     ],
     "extraResources": [
       {
@@ -81,5 +83,8 @@
         "repo": "musicflow-"
       }
     ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

@@ -58,6 +58,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "artifactName": "${productName} Setup.${ext}",
       "shortcutName": "Musicflow"
     },
     "mac": {

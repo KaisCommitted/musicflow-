@@ -9,10 +9,14 @@ synced lyrics, then manage and play your whole library from a clean, fast deskto
 
 ## Download
 
-**[⬇ Download Musicflow Installer (Windows)](https://github.com/KaisCommitted/musicflow-/releases/latest)**
+**[⬇ Download Musicflow for Windows](https://github.com/KaisCommitted/musicflow-/releases/latest/download/Musicflow%20Setup.exe)**
 
 Run the installer, then launch Musicflow from the Start Menu or Desktop. That's it — no Python,
-no Node, nothing else to install.
+no Node, nothing else to install. This link always grabs the latest version — no need to pick
+anything on the [releases page](https://github.com/KaisCommitted/musicflow-/releases/latest).
+
+On Mac, grab the `.dmg` for your chip (Apple Silicon or Intel) from the
+[releases page](https://github.com/KaisCommitted/musicflow-/releases/latest) instead.
 
 ## Features
 

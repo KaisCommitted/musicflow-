@@ -68,7 +68,7 @@
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.music",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${arch}.${ext}",
       "identity": null,
       "extraResources": [
         {

@@ -12,11 +12,21 @@ synced lyrics, then manage and play your whole library from a clean, fast deskto
 **[⬇ Download Musicflow for Windows](https://github.com/KaisCommitted/musicflow-/releases/latest/download/Musicflow-Setup.exe)**
 
 Run the installer, then launch Musicflow from the Start Menu or Desktop. That's it — no Python,
-no Node, nothing else to install. This link always grabs the latest version — no need to pick
-anything on the [releases page](https://github.com/KaisCommitted/musicflow-/releases/latest).
+no Node, nothing else to install.
 
-On Mac, grab the `.dmg` for your chip (Apple Silicon or Intel) from the
-[releases page](https://github.com/KaisCommitted/musicflow-/releases/latest) instead.
+**macOS** — pick your chip (Apple menu → About This Mac if you're not sure):
+
+| Chip | Download |
+|------|----------|
+| Apple Silicon (M1/M2/M3/M4) | [⬇ Musicflow.dmg](https://github.com/KaisCommitted/musicflow-/releases/latest/download/Musicflow-arm64.dmg) |
+| Intel | [⬇ Musicflow.dmg](https://github.com/KaisCommitted/musicflow-/releases/latest/download/Musicflow-x64.dmg) |
+
+Unsigned, so Gatekeeper blocks a double-click on first launch — right-click the app → Open
+instead, just that first time.
+
+Every link above always grabs the latest version — no need to pick anything on the
+[releases page](https://github.com/KaisCommitted/musicflow-/releases/latest). Musicflow also
+checks for updates on its own and prompts you in-app when a new one's out.
 
 ## Features
 
@@ -32,12 +42,13 @@ On Mac, grab the `.dmg` for your chip (Apple Silicon or Intel) from the
 - Sleep timer
 
 **Downloads & lyrics**
-- Paste a list of songs and bulk-download them, three at a time
+- One box for everything: paste song names, Spotify playlist links, and YouTube playlist links
+  together — each line is auto-detected and downloaded accordingly, three at a time
 - Metadata (artist, album, year, genre, artwork) fetched and embedded automatically
 - Synced lyrics pulled from multiple providers every time (not just until the first hit) and
   embedded as ID3 tags + `.lrc` files
 - Bulk-generate lyrics for an existing library you didn't download through Musicflow
-- Auto-detects and creates playlists from your download list
+- Auto-detects and creates playlists from your download list or imported playlist links
 
 **Customization**
 - Dark/light theme, with a secondary accent color drawn live from whatever album art is playing
@@ -49,6 +60,8 @@ On Mac, grab the `.dmg` for your chip (Apple Silicon or Intel) from the
 - Runs as a real desktop app via Electron — frameless window, native install/uninstall
 - Minimizes to the system tray — closing the window keeps music playing in the background;
   quit from the tray icon's menu when you actually want to exit
+- Checks for updates on its own and prompts in-app — updates and restarts itself automatically
+  on Windows, points you to the download on macOS
 - Discord Rich Presence (shows what you're listening to — nothing to configure)
 - Scrobbling to ListenBrainz and/or Last.fm
 
@@ -104,7 +117,8 @@ Open `http://localhost:5000`. Downloads go to a Docker volume.
 
 ## How It Works
 
-1. Enter song names (one per line) and start the download
+1. Paste song names, Spotify playlist links, and/or YouTube playlist links (any mix, one per
+   line) and start the download
 2. Musicflow searches YouTube, downloads the best audio match, and converts it to MP3
 3. Metadata (title, artist, album, artwork) is fetched and embedded automatically
 4. Synced lyrics are searched across multiple providers and embedded as ID3 tags + `.lrc` files
@@ -136,7 +150,7 @@ npm run dist
 ```
 
 Freezes the backend with PyInstaller, then packages it with Electron into an NSIS installer at
-`musicflow-electron/release/Musicflow Setup <version>.exe`.
+`musicflow-electron/release/Musicflow-Setup.exe`.
 
 ---
 

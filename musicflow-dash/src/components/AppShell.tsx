@@ -7,6 +7,7 @@ import { SongContextMenu } from "@/components/SongContextMenu";
 import { FolderSetupGate } from "@/components/FolderSetupGate";
 import { TitleBar } from "@/components/TitleBar";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { UpdateSplash } from "@/components/UpdateSplash";
 import { useLibrary } from "@/store/library";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDiscordPresence } from "@/hooks/useDiscordPresence";
@@ -80,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SongContextMenu />
         <UpdateBanner />
       </div>
+      <UpdateSplash />
     </div>
   );
 }

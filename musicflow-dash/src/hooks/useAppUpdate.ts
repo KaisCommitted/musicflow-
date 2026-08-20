@@ -8,21 +8,24 @@ import {
   openUpdatePage,
 } from "@/lib/electronBridge";
 
-type UpdateStatus = "idle" | "available" | "downloading" | "ready";
+type UpdateStatus = "idle" | "available" | "downloading" | "installing";
 
 interface UpdateState {
   status: UpdateStatus;
   version: string | null;
   /** "auto" = Windows, updates itself in place. "manual" = macOS, can only open the release
-   * page — there's never a download/progress/ready state for it, "available" is the whole
+   * page — there's never a downloading/installing state for it, "available" is the whole
    * story. */
   mode: "auto" | "manual" | null;
   percent: number;
 }
 
-/** Drives UpdateBanner.tsx — main process (updater.js) only checks and reports state over IPC,
- * this owns what the user actually sees and asks back for each step they take. No-op outside
- * Electron (every onUpdate* subscription below is a no-op there too, see electronBridge.ts). */
+/** Drives UpdateBanner.tsx (the small "available" pill) and UpdateSplash.tsx (the full-screen
+ * takeover for downloading/installing) — main process (updater.js) only checks and reports
+ * state over IPC, this owns what the user actually sees. Once a download finishes it installs
+ * immediately, no "ready, click restart" prompt — the only choice offered is starting the
+ * update in the first place. No-op outside Electron (every onUpdate* subscription below is a
+ * no-op there too, see electronBridge.ts). */
 export function useAppUpdate() {
   const [state, setState] = useState<UpdateState>({
     status: "idle",
@@ -41,7 +44,13 @@ export function useAppUpdate() {
       setState((s) => ({ ...s, status: "downloading", percent }));
     });
     const offReady = onUpdateReady(({ version }) => {
-      setState((s) => ({ ...s, status: "ready", version, percent: 100 }));
+      // Don't ask — just install. There's no way to show real progress once quitAndInstall
+      // actually fires (the whole Electron process, and everything it's rendering, is gone
+      // before the installer even starts), so this beat of "installing" is what UpdateSplash
+      // shows instead — long enough to register, short enough not to feel like a delay for
+      // its own sake — before the app quits out from under it.
+      setState((s) => ({ ...s, status: "installing", version, percent: 100 }));
+      setTimeout(() => installUpdate(), 1200);
     });
     return () => {
       offAvailable();
@@ -64,6 +73,5 @@ export function useAppUpdate() {
         openUpdatePage();
       }
     },
-    install: installUpdate,
   };
 }

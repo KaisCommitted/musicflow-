@@ -12,14 +12,41 @@ const { checkForUpdates } = require("./updater");
 // the Python backend already keeps its own db/log (see musicflow-api/db.py).
 app.setName("Musicflow");
 
+/** Small local prefs file, separate from the Python backend's own settings (musicflow-api/db.py)
+ * because main.js needs to read this synchronously before app.whenReady() — long before the
+ * backend has even started, let alone been queried over HTTP. Currently just the hardware-
+ * acceleration opt-in below; add more keys here if that's ever needed for something else. */
+function prefsPath() {
+  return path.join(app.getPath("userData"), "prefs.json");
+}
+function readPrefs() {
+  try {
+    return JSON.parse(fs.readFileSync(prefsPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+function writePrefs(patch) {
+  try {
+    fs.mkdirSync(app.getPath("userData"), { recursive: true });
+    fs.writeFileSync(prefsPath(), JSON.stringify({ ...readPrefs(), ...patch }));
+  } catch {
+    // Best-effort — worst case the toggle doesn't stick, not worth failing over.
+  }
+}
+
 // Frameless windows (frame: false + backgroundColor below, since TitleBar.tsx draws our own
 // chrome) are the textbook trigger for a well-documented Electron/Chromium bug: on some
 // machines (Intel integrated graphics, remote desktop sessions, VMs, or after a GPU driver
 // hiccup) the GPU compositor fails silently and the window paints solid black forever — not
 // even the hand-drawn titlebar shows, since there's no native chrome to fall back to. Must be
 // called before app.whenReady(). Costs a little smoothness on the blur/visualizer effects, but
-// a window that reliably shows something beats one that sometimes doesn't.
-app.disableHardwareAcceleration();
+// a window that reliably shows something beats one that sometimes doesn't — so this stays the
+// default for everyone. Settings > Advanced offers hardware acceleration as an opt-in (see the
+// "prefs:*" IPC handlers below) for people who've confirmed their machine doesn't hit the bug.
+if (!readPrefs().hardwareAcceleration) {
+  app.disableHardwareAcceleration();
+}
 
 let backendProcess = null;
 let mainWindow = null;
@@ -204,6 +231,23 @@ function applyGlobalKeybinds(bindings) {
 }
 
 ipcMain.on("keybinds:set", (_event, bindings) => applyGlobalKeybinds(bindings));
+
+// Hardware acceleration (see the disableHardwareAcceleration call above) can only be decided
+// before app.whenReady(), so toggling it here just persists the choice for next launch —
+// restartApp below is how Settings actually applies it.
+ipcMain.handle("prefs:get-hardware-acceleration", () => readPrefs().hardwareAcceleration === true);
+ipcMain.on("prefs:set-hardware-acceleration", (_event, enabled) =>
+  writePrefs({ hardwareAcceleration: !!enabled }),
+);
+// A real restart (not just a window reload) — needed for the acceleration flag above to take
+// effect. app.exit() skips before-quit/will-quit, so the backend has to be killed explicitly
+// here rather than relying on those handlers.
+ipcMain.on("app:restart", () => {
+  isQuitting = true;
+  killBackend();
+  app.relaunch();
+  app.exit(0);
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({

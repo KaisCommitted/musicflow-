@@ -44,4 +44,10 @@ contextBridge.exposeInMainWorld("musicflow", {
   downloadUpdate: () => ipcRenderer.send("update:download"),
   installUpdate: () => ipcRenderer.send("update:install"),
   openUpdatePage: () => ipcRenderer.send("update:open-page"),
+
+  // Settings > Advanced's hardware-acceleration toggle (see main.js) — persisted locally since
+  // it has to be read before the backend even starts, and applied via a real restart.
+  getHardwareAcceleration: () => ipcRenderer.invoke("prefs:get-hardware-acceleration"),
+  setHardwareAcceleration: (enabled) => ipcRenderer.send("prefs:set-hardware-acceleration", enabled),
+  restartApp: () => ipcRenderer.send("app:restart"),
 });

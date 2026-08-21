@@ -38,6 +38,9 @@ declare global {
       downloadUpdate: () => void;
       installUpdate: () => void;
       openUpdatePage: () => void;
+      getHardwareAcceleration: () => Promise<boolean>;
+      setHardwareAcceleration: (enabled: boolean) => void;
+      restartApp: () => void;
     };
   }
 }
@@ -80,3 +83,11 @@ export const onUpdateReady = (callback: (info: UpdateReadyInfo) => void): (() =>
 export const downloadUpdate = () => window.musicflow?.downloadUpdate();
 export const installUpdate = () => window.musicflow?.installUpdate();
 export const openUpdatePage = () => window.musicflow?.openUpdatePage();
+
+/** Persisted locally in the Electron shell (see main.js), not backend settings — it has to be
+ * readable before the backend even starts. Only takes effect after restartApp(). */
+export const getHardwareAcceleration = () =>
+  window.musicflow?.getHardwareAcceleration() ?? Promise.resolve(false);
+export const setHardwareAcceleration = (enabled: boolean) =>
+  window.musicflow?.setHardwareAcceleration(enabled);
+export const restartApp = () => window.musicflow?.restartApp();

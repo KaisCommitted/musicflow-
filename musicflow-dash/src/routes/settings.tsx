@@ -6,6 +6,12 @@ import { FolderPicker } from "@/components/FolderPicker";
 import { LibraryIssuesPanel } from "@/components/LibraryIssuesPanel";
 import { useLibrary, type Settings } from "@/store/library";
 import {
+  getHardwareAcceleration,
+  isElectron,
+  restartApp,
+  setHardwareAcceleration,
+} from "@/lib/electronBridge";
+import {
   backupExportUrl,
   completeLastfmAuth,
   disconnectLastfm,
@@ -504,6 +510,47 @@ function LastfmSection({
   );
 }
 
+/** Off by default everywhere (see musicflow-electron/main.js) — a well-documented Electron bug
+ * paints frameless windows solid black on launch on some Intel integrated graphics, remote
+ * desktop, or VM setups. This is an explicit opt-in for people who've confirmed their own
+ * machine doesn't hit it: noticeably smoother visualizer/blur rendering and much lower CPU use.
+ * Electron-only — a plain browser tab has no main process for the flag to apply to. Persisted
+ * outside the usual settings store (see electronBridge.ts) since it has to be read before the
+ * backend even starts, and only takes effect after a real restart. */
+function HardwareAccelerationSection() {
+  const [enabled, setEnabled] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    void getHardwareAcceleration().then(setEnabled);
+  }, []);
+
+  const toggle = (v: boolean) => {
+    setEnabled(v);
+    setHardwareAcceleration(v);
+    setDirty(true);
+  };
+
+  return (
+    <Row
+      title="Hardware acceleration"
+      description="Smoother visualizer/blur rendering and lower CPU use. Off by default — on some Intel integrated graphics, remote desktop, or VM setups this shows a black screen on launch instead. Only turn it on if you've confirmed that's not you, and switch it back off if the window ever fails to show."
+    >
+      <div className="flex items-center gap-3">
+        {dirty && (
+          <button
+            onClick={() => restartApp()}
+            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-105"
+          >
+            Restart to apply
+          </button>
+        )}
+        <Toggle on={enabled} onChange={toggle} />
+      </div>
+    </Row>
+  );
+}
+
 const BROWSER_LABELS: Record<string, string> = {
   chrome: "Chrome", firefox: "Firefox", edge: "Edge", brave: "Brave", opera: "Opera",
   vivaldi: "Vivaldi", chromium: "Chromium",
@@ -800,6 +847,17 @@ function SettingsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {isElectron() && (
+        <>
+          <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Advanced
+          </h2>
+          <div className="mt-3 max-w-3xl space-y-3">
+            <HardwareAccelerationSection />
+          </div>
+        </>
       )}
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

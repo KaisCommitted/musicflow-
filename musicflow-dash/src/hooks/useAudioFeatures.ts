@@ -24,14 +24,25 @@ export function useAudioFeatures(enabled: boolean): React.RefObject<AudioFeature
 
     let raf = 0;
     let last = performance.now();
+    // The FFT extraction below doesn't need to run at full display refresh (120Hz+ panels were
+    // doing this work twice as often as a 60Hz one for no visible benefit) — accumulate real
+    // elapsed time and only do the work once ~33ms (30fps) has piled up, while dt still reflects
+    // however much time actually passed so motion stays frame-rate independent.
+    let acc = 0;
+    const STEP = 1 / 30;
     const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const frameDt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const ex = extractorRef.current;
-      if (ex) ex.update(featuresRef.current, dt, usePlayer.getState().isPlaying);
-      else {
-        featuresRef.current.time += dt;
-        featuresRef.current.active = false;
+      acc += frameDt;
+      if (acc >= STEP) {
+        const dt = acc;
+        acc = 0;
+        const ex = extractorRef.current;
+        if (ex) ex.update(featuresRef.current, dt, usePlayer.getState().isPlaying);
+        else {
+          featuresRef.current.time += dt;
+          featuresRef.current.active = false;
+        }
       }
       raf = requestAnimationFrame(loop);
     };

@@ -133,12 +133,32 @@ export function VisualizerStage({
     const observer = new MutationObserver(readPalette);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
 
+    // "None" (see lib/visualizers/none.ts) only ever clears the canvas — no point paying for a
+    // rAF loop (uncapped, running clearRect over the full canvas every frame, in software since
+    // hardware acceleration is off — see main.js) just to draw nothing, over and over.
+    if (styleId === "none") {
+      instance.draw({ ctx, w, h, dt: 0, f: featuresRef.current, palette });
+      return () => {
+        window.removeEventListener("resize", resize);
+        observer.disconnect();
+      };
+    }
+
     let raf = 0;
     let last = performance.now();
+    // Same reasoning as useAudioFeatures: cap the actual draw work to ~30fps regardless of the
+    // display's refresh rate, since these are ambient/audio-reactive visuals, not something that
+    // benefits from 120Hz+ smoothness.
+    let acc = 0;
+    const STEP = 1 / 30;
     const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const frameDt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      instance.draw({ ctx, w, h, dt, f: featuresRef.current, palette });
+      acc += frameDt;
+      if (acc >= STEP) {
+        instance.draw({ ctx, w, h, dt: acc, f: featuresRef.current, palette });
+        acc = 0;
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

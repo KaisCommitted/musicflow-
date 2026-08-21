@@ -89,7 +89,9 @@ export function FullScreenPlayer() {
   // Which full-screen background visualizer is active. Sticky for the session, not persisted —
   // same convention as lyricsMode above.
   const [styleId, setStyleId] = useState(DEFAULT_VISUALIZER_ID);
-  const featuresRef = useAudioFeatures(fullscreen);
+  // "None" draws nothing (see lib/visualizers/none.ts) — no point tapping the AnalyserNode and
+  // running its rAF/FFT loop just to feed a ref nothing will read.
+  const featuresRef = useAudioFeatures(fullscreen && styleId !== "none");
   // The style switcher is otherwise hover-only — this keeps it visible for a while after an
   // actual interaction (picking a style, or opening it by clicking the trigger) so it doesn't
   // vanish the instant the pointer drifts off, then falls back to pure hover.
